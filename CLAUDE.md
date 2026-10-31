@@ -1,0 +1,74 @@
+# Agent IDE
+
+IDE desktop centrada em agentes de código (Electron, React e TypeScript). Roda a CLI real do agente em um terminal; não reimplementa o agente. O nome é provisório.
+
+## Como trabalhar neste projeto
+
+- **Mudança estrutural ou funcionalidade nova:** levante as decisões difíceis de reverter, traga uma recomendação e espere aprovação antes de escrever código. Responder perguntas de requisitos não é aprovação para implementar.
+- **Interface nova:** ofereça um mockup antes de implementar.
+- **Ações por ícone:** pouco texto na interface, sempre com descrição ao passar o mouse.
+- **Commit e push:** só quando pedido. Confira o que entrou no commit: a pasta do repositório também pode ser a pasta de trabalho da IDE.
+- **Idioma:** interface, comentários, commits e documentação em português do Brasil.
+
+## Comandos
+
+```sh
+npm run typecheck
+npm test                    # unidade
+npm run e2e                 # compila e percorre o app real; abre janelas na tela
+npm run dev                 # app com recarga automática
+npm run start               # app compilado
+```
+
+`node e2e/claude-real.mjs` usa um Claude Code real e **consome tokens**. Rode só de propósito e depois de `npm run build`, quando mexer em sessões, retomada ou histórico.
+
+## Antes de dizer que terminou
+
+1. Rode `npm run typecheck`, `npm test` e `npm run e2e`.
+2. Olhe as capturas em `e2e/*.png`, porque os testes não avaliam aparência.
+3. Teste a interação como o usuário faz. O botão central de nova sessão ficou quebrado porque o teste criava sessões por outro caminho e o clique real nunca era exercitado.
+
+Toda funcionalidade nova ganha verificação em `e2e/smoke.mjs`.
+
+## Manter estes arquivos atualizados
+
+Atualizar os `CLAUDE.md` faz parte da tarefa: faça no mesmo commit da mudança que os afetou, sem esperar pedido. Antes de concluir, confira:
+
+- **Algo aqui ficou falso?** Corrija ou apague. Isso vale para comandos, caminhos, nomes citados, decisões e próximos passos. Item concluído sai da lista.
+- **Decisão nova do usuário?** Registre em "Decisões de produto", inclusive quando ela substituir outra.
+- **Descobriu uma armadilha?** Anote se ela custou tempo e não dá para deduzir lendo o código. O que vale para uma área só vai em `src/main/CLAUDE.md` ou `src/renderer/CLAUDE.md`.
+- **Instrução contradiz o código?** Confie no código, verifique e corrija o arquivo. Se a dúvida for sobre uma decisão de produto, pergunte ao usuário.
+- **Formato interno do Claude Code:** ao mexer nessas partes, confira em um transcript real se o que está anotado continua valendo.
+
+Mantenha os arquivos curtos: nada de histórico de mudanças, que fica no Git, nem descrição do que o código já mostra. Ao adicionar algo, veja se outro item pode sair.
+
+## Mapa
+
+- `src/shared/types.ts`: contrato entre os processos. Comece por aqui.
+- `src/main/`: processos, arquivos, projetos, ambientes e histórico. Veja `src/main/CLAUDE.md`.
+- `src/preload/index.ts`: expõe a API `window.ide`.
+- `src/renderer/src/`: interface. Veja `src/renderer/CLAUDE.md`.
+
+Um novo canal de IPC passa por três arquivos: `shared/types.ts`, `preload/index.ts` e `main/index.ts`.
+
+## Decisões de produto
+
+- Integração por terminal real, não por Agent SDK.
+- O projeto é o centro: toda sessão parte de um projeto, e o histórico é por projeto.
+- A pasta de trabalho é escolhida uma única vez. Não peça ao usuário para escolher onde salvar.
+- A IDE sempre abre na tela inicial, e nenhuma sessão começa sozinha.
+- Fechar uma aba não apaga o ambiente; apagar é uma ação separada.
+- Temas claro (padrão) e escuro em toda tela nova.
+- Open source, com licença MIT. O repositório ainda é privado.
+
+## Próximos passos, nesta ordem
+
+1. Contexto e custo por sessão, lendo o transcript `.jsonl`.
+2. Aplicações em execução, por sessão.
+3. Adaptadores de outras CLIs e de modelos locais.
+4. Instaladores, e suporte testado a Mac e Linux. Hoje só o Windows é testado.
+
+## Ambiente de desenvolvimento
+
+- Windows. Comandos muito longos no Bash falham com `ENAMETOOLONG`: use as ferramentas de arquivo.
+- Se a sessão foi aberta dentro de um Claude Code, os testes herdam variáveis dele. `src/main/childEnv.ts` as remove das sessões criadas pelo app.
