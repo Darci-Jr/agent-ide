@@ -3,3 +3,9 @@ out/
 dist/
 e2e/*.png
 *.log
+
+# Dados de uso, quando a pasta de trabalho da IDE é este repositório
+/Ambientes/
+/Temporarios/
+/Projetos/
+/projetos.json

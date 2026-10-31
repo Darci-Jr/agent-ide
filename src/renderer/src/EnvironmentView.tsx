@@ -50,6 +50,7 @@ export function EnvironmentView(props: {
   const [filesOpen, setFilesOpen] = useState(false)
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [worktree, setWorktree] = useState(false)
+  const [panelCount, setPanelCount] = useState(0)
   const envRef = useRef(env)
   envRef.current = env
   const apiRef = useRef<DockviewApi | null>(null)
@@ -217,13 +218,17 @@ export function EnvironmentView(props: {
       }
     }
     for (const session of current.sessions) addTerminalPanel(dock, session)
-    dock.onDidLayoutChange(() => ide.saveLayout(env.id, dock.toJSON()))
+    dock.onDidLayoutChange(() => {
+      setPanelCount(dock.panels.length)
+      ide.saveLayout(env.id, dock.toJSON())
+    })
+    setPanelCount(dock.panels.length)
     dock.onDidMaximizedGroupChange(() => {
       if (!dock.hasMaximizedGroup()) setFocusId(null)
     })
 
     // Primeira abertura de um ambiente novo: monta o que o modelo promete.
-    if (!current.layout && current.sessions.length === 0 && current.template !== 'blank') {
+    if (!current.layout && current.sessions.length === 0 && (current.template !== 'blank' || current.draft)) {
       void createSession(defaultAdapterRef.current, false).then(() => {
         if (current.template !== 'think') return
         dock.addPanel<FilePanelParams>({
@@ -237,7 +242,7 @@ export function EnvironmentView(props: {
     }
   }
 
-  const empty = api !== null && env.sessions.length === 0 && api.panels.length === 0
+  const empty = api !== null && panelCount === 0
 
   return (
     <div className="environment" style={{ display: props.active ? 'flex' : 'none' }}>
@@ -246,6 +251,7 @@ export function EnvironmentView(props: {
         <IconButton icon="folder" label="Arquivos" className={filesOpen ? 'on' : ''} onClick={() => setFilesOpen(!filesOpen)} />
         <IconButton icon="terminal" label="Nova sessão" onClick={() => void createSession(defaultAdapter, false)} />
         <IconButton icon="options" label="Nova sessão com opções" className={optionsOpen ? 'on' : ''} onClick={() => setOptionsOpen(!optionsOpen)} />
+        <IconButton icon="openFolder" label="Abrir pasta do projeto" onClick={() => void ide.openProjectFolder(env.projectId)} />
         <div className="rail-space" />
         <IconButton icon={props.theme === 'light' ? 'moon' : 'sun'} label={props.theme === 'light' ? 'Tema escuro' : 'Tema claro'} onClick={props.toggleTheme} />
       </nav>
@@ -261,7 +267,7 @@ export function EnvironmentView(props: {
               type="button"
               className="ghost"
               disabled={!a.available}
-              title={a.available ? undefined : 'Não encontrado no PATH'}
+              data-tip={a.available ? undefined : 'Não encontrado no PATH'}
               onClick={() => {
                 setOptionsOpen(false)
                 void createSession(a.id, worktree)

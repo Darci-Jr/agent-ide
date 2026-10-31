@@ -9,8 +9,14 @@ Testado apenas no Windows.
 
 ## O que faz
 
-- **Ambientes:** abas com pasta, layout e sessões próprios, criadas a partir de modelos.
-  Exporte um ambiente para um arquivo e compartilhe com o time.
+- **Pasta de trabalho:** escolhida uma vez, no primeiro uso. A IDE organiza nela `Projetos`,
+  `Ambientes` e `Temporarios`, e nunca mais pergunta onde salvar.
+- **Projetos:** crie um novo ou adicione uma pasta existente. Toda sessão parte de um projeto.
+- **Histórico:** as conversas do Claude Code de cada projeto, com a opção de restaurar a última.
+- **Sessão rápida:** só escolha o projeto. Ela fica em um ambiente temporário até você fechar a
+  aba, e pode ser salva como ambiente a qualquer momento.
+- **Ambientes:** abas com layout e sessões próprios, criadas a partir de modelos ou de outros
+  ambientes salvos. Exporte um ambiente para um arquivo e compartilhe com o time.
 - **Sessões em paralelo:** cada uma em um terminal real, com worktree Git opcional. Destaque
   uma e volte para a grade sem reiniciar nada.
 - **Layout livre:** arraste, divida e agrupe painéis. O layout volta quando você reabre o app.

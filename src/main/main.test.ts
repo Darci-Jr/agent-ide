@@ -103,6 +103,9 @@ describe('exportar e importar ambientes', () => {
   const env: Environment = {
     id: 'e1',
     name: 'Loja',
+    projectId: 'p1',
+    draft: false,
+    lastOpenedAt: 1,
     cwd: 'C:\\Users\\Fulano\\loja',
     template: 'multi',
     sessions: [{ id: sid, adapterId: 'claude', title: 'Login', cwd: 'C:\\Users\\Fulano\\loja.worktrees\\abc', worktreeBranch: 'agent/abc', started: true }],
@@ -126,8 +129,9 @@ describe('exportar e importar ambientes', () => {
   })
 
   it('importa em outra pasta com ids novos e sessões paradas', () => {
-    const imported = importEnvironment(exportEnvironment(env, layout), 'D:\\outro', ['claude', 'shell'])
+    const imported = importEnvironment(exportEnvironment(env, layout), 'D:\\outro', 'p2', ['claude', 'shell'])
     expect(imported.cwd).toBe('D:\\outro')
+    expect(imported.projectId).toBe('p2')
     expect(imported.sessions[0]).toMatchObject({ cwd: 'D:\\outro', started: false, title: 'Login' })
     const newId = imported.sessions[0]!.id
     expect(newId).not.toBe(sid)
@@ -141,7 +145,7 @@ describe('exportar e importar ambientes', () => {
       fn(copy)
       return JSON.stringify(copy)
     }
-    const load = (text: string) => () => importEnvironment(text, 'D:\\x', ['claude', 'shell'])
+    const load = (text: string) => () => importEnvironment(text, 'D:\\x', 'p2', ['claude', 'shell'])
     expect(load('nao json')).toThrow('inválido')
     expect(load(tamper((d) => (d.sessions[0].adapterId = 'calc.exe')))).toThrow('agente desconhecido')
     expect(load(tamper((d) => (d.layout.panels['file:2'].params.path = '../../.ssh/id_rsa')))).toThrow('fora do projeto')

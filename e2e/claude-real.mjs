@@ -15,8 +15,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const base = mkdtempSync(join(tmpdir(), 'agent-ide-claude-'))
 const project = join(base, 'projeto')
 const profile = join(base, 'perfil')
-mkdirSync(project)
-mkdirSync(profile)
+const workspaceDir = join(base, 'trabalho')
+for (const dir of [project, profile, workspaceDir]) mkdirSync(dir)
 
 let failures = 0
 const check = (name, ok, detail = '') => {
@@ -25,7 +25,7 @@ const check = (name, ok, detail = '') => {
 }
 
 async function launch() {
-  const env = { ...process.env, ANTHROPIC_MODEL: 'claude-haiku-5-5', AGENT_IDE_USER_DATA: profile, AGENT_IDE_TEST_DIRECTORY: project }
+  const env = { ...process.env, ANTHROPIC_MODEL: 'claude-haiku-5-5', AGENT_IDE_USER_DATA: profile, AGENT_IDE_TEST_DIRECTORY: project, AGENT_IDE_TEST_WORKSPACE: workspaceDir }
   delete env.ELECTRON_RUN_AS_NODE
   const app = await _electron.launch({ executablePath: electronPath, args: [root], env, cwd: root })
   const page = await app.firstWindow()
@@ -50,9 +50,11 @@ const findTranscripts = () => {
 }
 
 let { app, page } = await launch()
-await page.getByRole('button', { name: /Várias sessões/ }).click()
+await page.getByRole('button', { name: 'Escolher pasta', exact: true }).click()
+await page.getByRole('button', { name: 'Criar sessão', exact: true }).click()
+await page.getByRole('button', { name: 'Adicionar pasta existente', exact: true }).click()
 await page.waitForSelector('.terminal-host')
-check('o modelo já abre uma sessão do Claude', await waitForText(page, /trust|Claude Code/i, 20000))
+check('a sessão rápida abre o Claude', await waitForText(page, /trust|Claude Code/i, 20000))
 if (/trust/i.test(await terminalText(page))) {
   await page.locator('.terminal-panel').first().click()
   // A opção selecionada por padrão é recusar.
@@ -76,9 +78,21 @@ check('grava o transcript', findTranscripts().length === 1)
 await app.close()
 await sleep(800)
 ;({ app, page } = await launch())
-await page.waitForSelector('.terminal-panel')
-await page.getByRole('button', { name: 'Retomar' }).click()
-check('retoma a conversa depois de reabrir o app', await waitForText(page, /ABACAXI/, 30000))
+await page.getByRole('button', { name: 'Carregar sessão', exact: true }).click()
+await page.locator('.home-row').filter({ hasText: 'projeto' }).first().locator('button').first().click()
+await page.getByRole('button', { name: 'Restaurar última', exact: true }).waitFor({ timeout: 15000 })
+await page.screenshot({ path: join(here, '9b-historico.png') })
+check('o histórico mostra a conversa', await page.locator('.home-row').filter({ hasText: 'mensage' }).first().isVisible())
+await page.getByRole('button', { name: 'Restaurar última', exact: true }).click()
+await page.waitForSelector('.terminal-host')
+check('restaura a conversa pelo histórico', await waitForText(page, /ABACAXI/, 30000))
+await page.getByRole('button', { name: 'Início', exact: true }).click()
+await page.getByRole('button', { name: 'Carregar sessão', exact: true }).click()
+await page.locator('.home-row').filter({ hasText: 'projeto' }).first().locator('button').first().click()
+await page.getByRole('button', { name: 'Restaurar última', exact: true }).click()
+await sleep(1000)
+check('restaurar de novo vai para a aba aberta, sem duplicar', (await page.locator('.tab-list [role=tab]').count()) === 1)
+check('reaproveita o ambiente da conversa, sem criar outro', readdirSync(join(workspaceDir, 'Temporarios')).length === 1)
 await sleep(1000)
 await page.screenshot({ path: join(here, '10-retomado.png') })
 await app.close()

@@ -61,7 +61,7 @@ const fail = (reason: string): never => {
  * indicar comandos, só agentes já conhecidos, nem apontar para fora do projeto.
  * Nenhuma sessão é iniciada ao importar.
  */
-export function importEnvironment(text: string, cwd: string, knownAdapters: string[]): Environment {
+export function importEnvironment(text: string, cwd: string, projectId: string, knownAdapters: string[]): Environment {
   let data: any
   try {
     data = JSON.parse(text)
@@ -96,5 +96,15 @@ export function importEnvironment(text: string, cwd: string, knownAdapters: stri
       }
     }
   }
-  return { id: randomUUID(), name: data.name.slice(0, 80), cwd, template: data.template, sessions, layout }
+  return {
+    id: randomUUID(),
+    name: data.name.slice(0, 80),
+    projectId,
+    draft: false,
+    lastOpenedAt: Date.now(),
+    cwd,
+    template: data.template,
+    sessions,
+    layout
+  }
 }

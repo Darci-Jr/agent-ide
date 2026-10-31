@@ -285,6 +285,8 @@ button:disabled {
 .dock-empty {
   position: absolute;
   inset: 0;
+  /* Acima da marca d'água do layout, que capturaria o clique. */
+  z-index: 10;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -722,4 +724,200 @@ button:disabled {
     transition: none !important;
     animation: none !important;
   }
+}
+
+/* Dica dos ícones */
+.tooltip {
+  position: fixed;
+  z-index: 1200;
+  max-width: 280px;
+  padding: 4px 8px;
+  background: var(--text);
+  color: var(--surface);
+  border-radius: 3px;
+  font-size: 13px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+/* Tela inicial */
+.home {
+  height: 100%;
+  overflow: auto;
+  background: var(--board);
+}
+
+.home-inner {
+  width: 760px;
+  max-width: 100%;
+  margin: 0 auto;
+  padding: 48px 24px;
+}
+
+.home-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.home-head h1 {
+  flex: 1;
+  margin: 0;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.home-note {
+  margin: 0 0 20px;
+  color: var(--muted);
+  font-size: 15px;
+}
+
+.home-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 32px;
+}
+
+.home-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 72px;
+  padding: 12px 16px;
+  background: var(--strip);
+  border: 0;
+  border-left: 6px solid var(--fill);
+  border-radius: 2px;
+  font-size: 17px;
+  font-weight: 700;
+  text-align: left;
+}
+
+.home-action:hover {
+  background: var(--strip-hover);
+}
+
+.home-action svg {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.home h2 {
+  margin: 24px 0 8px;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.home-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 4px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+
+.home-row > button:first-child {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px 12px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+}
+
+.home-row > button:first-child:hover {
+  background: var(--hover);
+}
+
+.home-row strong,
+.home-row span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home-row strong {
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.home-row span {
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.home-row .icon {
+  margin-right: 4px;
+}
+
+.home-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.home-form input,
+.modal input[type='text'] {
+  flex: 1;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+}
+
+.modal input[type='text'] {
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.home-buttons {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.tab-home {
+  display: inline-flex;
+  align-items: center;
+  height: 44px;
+  padding: 0 10px;
+  background: transparent;
+  border: 0;
+  border-bottom: 3px solid transparent;
+  color: var(--muted);
+}
+
+.tab-home svg {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.tab-home.on {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.tab .draft {
+  font-style: italic;
 }

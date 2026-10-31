@@ -26,9 +26,40 @@ export interface SessionState {
   exitCode?: number
 }
 
+export interface Project {
+  id: string
+  name: string
+  path: string
+  /** A pasta foi criada pela IDE, dentro da pasta de trabalho. */
+  managed: boolean
+  lastUsedAt: number
+}
+
+/** Conversa encontrada no histórico de um projeto. */
+export interface HistoryEntry {
+  sessionId: string
+  title: string
+  cwd: string
+  updatedAt: number
+  messages: number
+}
+
+export interface CreateEnvironmentRequest {
+  projectId: string
+  template: TemplateId
+  /** Usa um ambiente salvo como modelo, no lugar de `template`. */
+  fromEnvironmentId?: string
+  /** Sessão rápida: fica em Temporarios até ser salva. */
+  draft?: boolean
+}
+
 export interface Environment {
   id: string
   name: string
+  projectId: string
+  /** Ambiente temporário, criado por uma sessão rápida. */
+  draft: boolean
+  lastOpenedAt: number
   cwd: string
   template: TemplateId
   sessions: SessionSpec[]
@@ -88,12 +119,28 @@ export interface CreateSessionResult {
 
 export interface IdeApi {
   listAdapters(): Promise<AdapterInfo[]>
+  getWorkspace(): Promise<string | null>
+  chooseWorkspace(): Promise<string | null>
+  openWorkspaceFolder(): Promise<void>
+  openProjectFolder(projectId: string): Promise<void>
+
+  listProjects(): Promise<Project[]>
+  createProject(name: string): Promise<Project>
+  addExistingProject(): Promise<Project | null>
+  removeProject(id: string): Promise<void>
+  listHistory(projectId: string): Promise<HistoryEntry[]>
+  openFromHistory(projectId: string, entry: HistoryEntry): Promise<Environment>
+
   listEnvironments(): Promise<Environment[]>
-  createEnvironment(template: TemplateId): Promise<Environment | null>
+  createEnvironment(req: CreateEnvironmentRequest): Promise<Environment>
+  markEnvironmentOpened(id: string): Promise<void>
+  saveEnvironment(id: string, name: string): Promise<Environment>
+  /** Fecha a aba e encerra as sessões; o ambiente continua salvo. */
+  closeEnvironment(id: string): Promise<void>
   deleteEnvironment(id: string): Promise<void>
   saveLayout(id: string, layout: unknown): void
   exportEnvironment(id: string, layout: unknown): Promise<boolean>
-  importEnvironment(): Promise<Environment | null>
+  importEnvironment(projectId: string): Promise<Environment | null>
 
   createSession(req: CreateSessionRequest): Promise<CreateSessionResult>
   startSession(environmentId: string, sessionId: string): Promise<void>

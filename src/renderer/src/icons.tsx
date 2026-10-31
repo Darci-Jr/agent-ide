@@ -23,6 +23,11 @@ const paths = {
   moon: <path d="M20 14.5A8.5 8.5 0 0 1 9.5 4a8.5 8.5 0 1 0 10.5 10.5z" />,
   pencil: <path d="M4 20l1-4L16 5l3 3L8 19zM14 7l3 3" />,
   stop: <rect x="6" y="6" width="12" height="12" />,
+  save: <path d="M5 3h11l3 3v15H5zM8 3v6h7V3M8 21v-7h8v7" />,
+  trash: <path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v5M14 11v5" />,
+  back: <path d="M11 5l-7 7 7 7M4 12h16" />,
+  home: <path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" />,
+  openFolder: <path d="M3 19V6h6l2 2h8v3M3 19l3-8h15l-3 8z" />,
   refresh: <path d="M20 11a8 8 0 0 0-14-4L4 9M4 4v5h5M4 13a8 8 0 0 0 14 4l2-2M20 20v-5h-5" />
 } satisfies Record<string, ReactNode>
 
@@ -40,7 +45,7 @@ export function IconButton(props: {
       type="button"
       className={`icon ${props.className ?? ''}`}
       aria-label={props.label}
-      title={props.label}
+      data-tip={props.label}
       disabled={props.disabled}
       // Dentro de uma aba, clicar no botão não pode iniciar um arraste.
       onPointerDown={(e) => e.stopPropagation()}

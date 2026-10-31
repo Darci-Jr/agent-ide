@@ -13,12 +13,27 @@ const invoke = <T>(channel: string, ...args: unknown[]): Promise<T> => ipcRender
 
 const api: IdeApi = {
   listAdapters: () => invoke('adapters:list'),
+  getWorkspace: () => invoke('workspace:get'),
+  chooseWorkspace: () => invoke('workspace:choose'),
+  openWorkspaceFolder: () => invoke('workspace:open'),
+  openProjectFolder: (id) => invoke('project:open', id),
+
+  listProjects: () => invoke('project:list'),
+  createProject: (name) => invoke('project:create', name),
+  addExistingProject: () => invoke('project:add'),
+  removeProject: (id) => invoke('project:remove', id),
+  listHistory: (id) => invoke('history:list', id),
+  openFromHistory: (id, entry) => invoke('history:open', id, entry),
+
   listEnvironments: () => invoke('env:list'),
-  createEnvironment: (template) => invoke('env:create', template),
+  createEnvironment: (req) => invoke('env:create', req),
+  markEnvironmentOpened: (id) => invoke('env:opened', id),
+  saveEnvironment: (id, name) => invoke('env:save', id, name),
+  closeEnvironment: (id) => invoke('env:close', id),
   deleteEnvironment: (id) => invoke('env:delete', id),
   saveLayout: (id, layout) => ipcRenderer.send('env:layout', id, layout),
   exportEnvironment: (id, layout) => invoke('env:export', id, layout),
-  importEnvironment: () => invoke('env:import'),
+  importEnvironment: (projectId) => invoke('env:import', projectId),
 
   createSession: (req) => invoke('session:create', req),
   startSession: (envId, id) => invoke('session:start', envId, id),

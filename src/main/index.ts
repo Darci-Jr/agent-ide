@@ -1,31 +1,35 @@
 import { app, BrowserWindow, dialog, ipcMain, session as electronSession, shell } from 'electron'
 import { randomUUID } from 'node:crypto'
+import { existsSync, readFileSync, renameSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
-import { basename, join } from 'node:path'
-import type { CreateSessionRequest, Environment, TemplateId } from '../shared/types'
+import { join } from 'node:path'
+import type { CreateEnvironmentRequest, CreateSessionRequest, Environment, HistoryEntry } from '../shared/types'
 import { adapterIds, listAdapters } from './adapters'
 import { exportEnvironment, importEnvironment } from './exchange'
 import { denyRead, getProtection, listConfigFiles, listTree, readProjectFile, writeProjectFile } from './files'
+import { listHistory } from './history'
 import { SessionManager } from './sessions'
 import { EnvironmentStore } from './store'
+import { Workspace } from './workspace'
 import { createWorktree } from './worktree'
 
 // Os testes usam um perfil separado e escolhem as pastas sem abrir diálogos.
 if (process.env.AGENT_IDE_USER_DATA) app.setPath('userData', process.env.AGENT_IDE_USER_DATA)
 const TEST_DIRECTORY = process.env.AGENT_IDE_TEST_DIRECTORY
+const TEST_WORKSPACE = process.env.AGENT_IDE_TEST_WORKSPACE
 const TEST_EXCHANGE_FILE = process.env.AGENT_IDE_TEST_EXCHANGE_FILE
 
 let win: BrowserWindow | null = null
 let manager: SessionManager
-let store: EnvironmentStore
+let store: EnvironmentStore | null = null
+let workspace: Workspace
 
 const send = (channel: string, ...args: unknown[]): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
 }
 
-async function pickDirectory(): Promise<string | null> {
-  if (TEST_DIRECTORY) return TEST_DIRECTORY
-  const result = await dialog.showOpenDialog(win!, { title: 'Escolha a pasta do projeto', properties: ['openDirectory'] })
+async function pickDirectory(title: string): Promise<string | null> {
+  const result = await dialog.showOpenDialog(win!, { title, properties: ['openDirectory'] })
   return result.canceled ? null : (result.filePaths[0] ?? null)
 }
 
@@ -35,28 +39,136 @@ const sessionOf = (env: Environment, id: string) => {
   return session
 }
 
+function requireStore(): EnvironmentStore {
+  if (!store) throw new Error('Escolha a pasta de trabalho primeiro.')
+  return store
+}
+
+function useWorkspace(dir: string): void {
+  workspace.choose(dir)
+  store = new EnvironmentStore(dir)
+  migrateOldEnvironments()
+}
+
+/** Ambientes da versão anterior ficavam em um único arquivo, sem projeto. */
+function migrateOldEnvironments(): void {
+  const old = join(app.getPath('userData'), 'environments.json')
+  if (!existsSync(old) || !store) return
+  try {
+    const list = JSON.parse(readFileSync(old, 'utf8')) as Environment[]
+    for (const env of list) {
+      if (!existsSync(env.cwd)) continue
+      const project = workspace.addExisting(env.cwd)
+      store.add({ ...env, projectId: project.id, draft: false, lastOpenedAt: 0 })
+    }
+    renameSync(old, `${old}.migrado`)
+  } catch (err) {
+    console.error('Falha ao migrar ambientes antigos:', err)
+  }
+}
+
+function uniqueName(base: string): string {
+  const taken = new Set(requireStore().all().map((e) => e.name))
+  if (!taken.has(base)) return base
+  let n = 2
+  while (taken.has(`${base} ${n}`)) n++
+  return `${base} ${n}`
+}
+
 function registerIpc(): void {
   ipcMain.handle('adapters:list', () => listAdapters())
 
-  ipcMain.handle('env:list', () => store.all())
-  ipcMain.handle('env:create', async (_e, template: TemplateId) => {
-    const cwd = await pickDirectory()
-    if (!cwd) return null
-    const env: Environment = { id: randomUUID(), name: basename(cwd) || cwd, cwd, template, sessions: [], layout: null }
-    store.add(env)
+  ipcMain.handle('workspace:get', () => workspace.dir)
+  ipcMain.handle('workspace:choose', async () => {
+    const dir = TEST_WORKSPACE ?? (await pickDirectory('Escolha a pasta de trabalho da IDE'))
+    if (dir) useWorkspace(dir)
+    return dir
+  })
+  ipcMain.handle('workspace:open', () => shell.openPath(workspace.dir ?? ''))
+  ipcMain.handle('project:open', (_e, id: string) => shell.openPath(workspace.get(id).path))
+
+  ipcMain.handle('project:list', () => workspace.projects())
+  ipcMain.handle('project:create', (_e, name: string) => workspace.createManaged(name))
+  ipcMain.handle('project:add', async () => {
+    const dir = TEST_DIRECTORY ?? (await pickDirectory('Escolha a pasta do projeto'))
+    return dir ? workspace.addExisting(dir) : null
+  })
+  ipcMain.handle('project:remove', (_e, id: string) => workspace.remove(id))
+  ipcMain.handle('history:list', (_e, id: string) => listHistory(workspace.get(id).path))
+  ipcMain.handle('history:open', async (_e, projectId: string, entry: HistoryEntry) => {
+    const project = workspace.get(projectId)
+    if (!existsSync(entry.cwd)) throw new Error(`A pasta desta conversa não existe mais: ${entry.cwd}`)
+    const session = { id: entry.sessionId, adapterId: 'claude', title: entry.title, cwd: entry.cwd, started: true }
+    const env: Environment = {
+      id: randomUUID(),
+      name: 'Sem título',
+      projectId,
+      draft: true,
+      lastOpenedAt: Date.now(),
+      cwd: project.path,
+      template: 'blank',
+      sessions: [session],
+      layout: null
+    }
+    requireStore().add(env)
+    workspace.touch(projectId)
+    await manager.start(session)
     return env
+  })
+
+  ipcMain.handle('env:list', () => store?.all() ?? [])
+  ipcMain.handle('env:create', (_e, req: CreateEnvironmentRequest) => {
+    const project = workspace.get(req.projectId)
+    const source = req.fromEnvironmentId ? requireStore().get(req.fromEnvironmentId) : null
+    const env: Environment = source
+      ? // Reaproveita a exportação: leva o layout, sem conversas nem dados locais.
+        importEnvironment(exportEnvironment(source, source.layout), project.path, project.id, adapterIds())
+      : {
+          id: randomUUID(),
+          name: '',
+          projectId: project.id,
+          draft: req.draft ?? false,
+          lastOpenedAt: Date.now(),
+          cwd: project.path,
+          template: req.template,
+          sessions: [],
+          layout: null
+        }
+    env.name = env.draft ? 'Sem título' : uniqueName(source ? source.name : project.name)
+    requireStore().add(env)
+    workspace.touch(project.id)
+    return env
+  })
+  ipcMain.handle('env:opened', (_e, id: string) => {
+    const env = requireStore().get(id)
+    env.lastOpenedAt = Date.now()
+    workspace.touch(env.projectId)
+    requireStore().saveSoon()
+  })
+  ipcMain.handle('env:save', (_e, id: string, name: string) => {
+    const env = requireStore().get(id)
+    const clean = name.trim()
+    if (!clean) throw new Error('Dê um nome ao ambiente.')
+    env.name = clean
+    env.draft = false
+    requireStore().flush()
+    return env
+  })
+  ipcMain.handle('env:close', (_e, id: string) => {
+    for (const s of requireStore().get(id).sessions) manager.remove(s.id)
+    requireStore().flush()
   })
   ipcMain.handle('env:delete', (_e, id: string) => {
     // As worktrees continuam no disco: podem ter trabalho ainda não salvo.
-    for (const s of store.get(id).sessions) manager.remove(s.id)
-    store.remove(id)
+    for (const s of requireStore().get(id).sessions) manager.remove(s.id)
+    requireStore().remove(id)
   })
   ipcMain.on('env:layout', (_e, id: string, layout: unknown) => {
-    store.get(id).layout = layout
-    store.saveSoon()
+    requireStore().get(id).layout = layout
+    requireStore().saveSoon()
   })
   ipcMain.handle('env:export', async (_e, id: string, layout: unknown) => {
-    const env = store.get(id)
+    const env = requireStore().get(id)
     const target =
       TEST_EXCHANGE_FILE ??
       (await dialog.showSaveDialog(win!, {
@@ -68,7 +180,8 @@ function registerIpc(): void {
     await writeFile(target, exportEnvironment(env, layout), 'utf8')
     return true
   })
-  ipcMain.handle('env:import', async () => {
+  ipcMain.handle('env:import', async (_e, projectId: string) => {
+    const project = workspace.get(projectId)
     const source =
       TEST_EXCHANGE_FILE ??
       (await dialog.showOpenDialog(win!, {
@@ -77,18 +190,15 @@ function registerIpc(): void {
         properties: ['openFile']
       })).filePaths[0]
     if (!source) return null
-    const text = await readFile(source, 'utf8')
-    // Valida antes de perguntar a pasta, para um arquivo ruim falhar logo.
-    importEnvironment(text, '', adapterIds())
-    const cwd = await pickDirectory()
-    if (!cwd) return null
-    const env = importEnvironment(text, cwd, adapterIds())
-    store.add(env)
+    const env = importEnvironment(await readFile(source, 'utf8'), project.path, project.id, adapterIds())
+    env.name = uniqueName(env.name)
+    requireStore().add(env)
+    workspace.touch(project.id)
     return env
   })
 
   ipcMain.handle('session:create', async (_e, req: CreateSessionRequest) => {
-    const env = store.get(req.environmentId)
+    const env = requireStore().get(req.environmentId)
     const id = randomUUID()
     const worktree = req.worktree ? await createWorktree(env.cwd, id) : null
     const number = env.sessions.length + 1
@@ -101,26 +211,26 @@ function registerIpc(): void {
       started: true
     }
     env.sessions.push(session)
-    store.flush()
+    requireStore().flush()
     await manager.start({ ...session, started: false })
     return { session, missingInWorktree: worktree?.missing ?? [] }
   })
   ipcMain.handle('session:start', async (_e, envId: string, id: string) => {
-    const session = sessionOf(store.get(envId), id)
+    const session = sessionOf(requireStore().get(envId), id)
     await manager.start(session)
     session.started = true
-    store.flush()
+    requireStore().flush()
   })
   ipcMain.handle('session:stop', (_e, id: string) => manager.stop(id))
   ipcMain.handle('session:remove', (_e, envId: string, id: string) => {
-    const env = store.get(envId)
+    const env = requireStore().get(envId)
     manager.remove(id)
     env.sessions = env.sessions.filter((s) => s.id !== id)
-    store.flush()
+    requireStore().flush()
   })
   ipcMain.handle('session:rename', (_e, envId: string, id: string, title: string) => {
-    sessionOf(store.get(envId), id).title = title
-    store.flush()
+    sessionOf(requireStore().get(envId), id).title = title
+    requireStore().flush()
   })
   ipcMain.handle('session:states', () => manager.list())
   ipcMain.on('pty:write', (_e, id: string, data: string) => manager.write(id, data))
@@ -185,7 +295,8 @@ void app.whenReady().then(() => {
       })
     })
   }
-  store = new EnvironmentStore(join(app.getPath('userData'), 'environments.json'))
+  workspace = new Workspace(join(app.getPath('userData'), 'config.json'))
+  if (workspace.dir) useWorkspace(workspace.dir)
   manager = new SessionManager({
     data: (id, data) => send('pty:data', id, data),
     states: (states) => send('session:states', states)
