@@ -1,0 +1,41 @@
+{
+  "name": "agent-ide",
+  "version": "0.1.0",
+  "description": "IDE centrada em agentes de código, com ambientes de trabalho personalizáveis.",
+  "license": "MIT",
+  "main": "out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "npm run build && node e2e/smoke.mjs"
+  },
+  "overrides": {
+    "dompurify": "$dompurify"
+  },
+  "dependencies": {
+    "@lydell/node-pty": "^1.2.0-beta.18"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.6",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/xterm": "^6.0.0",
+    "dockview-react": "^8.8.3",
+    "dompurify": "^3.4.17",
+    "electron": "^45.2.1",
+    "electron-vite": "^6.0.0",
+    "marked": "^18.1.2",
+    "monaco-editor": "^0.57.0",
+    "playwright-core": "^1.64.1",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "vitest": "^5.0.5"
+  }
+}
