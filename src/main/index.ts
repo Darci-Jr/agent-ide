@@ -2,11 +2,12 @@ import { app, BrowserWindow, dialog, ipcMain, session as electronSession, shell 
 import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, renameSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
-import type { CreateEnvironmentRequest, CreateSessionRequest, Environment, HistoryEntry, OpenTabs, Preferences, SessionState, CommandDraft } from '../shared/types'
+import { join, resolve } from 'node:path'
+import type { CreateEnvironmentRequest, CreateSessionRequest, Environment, HistoryEntry, OpenTabs, Preferences, SessionState, CommandDraft, GitAction } from '../shared/types'
 import { adapterIds, listAdapters } from './adapters'
 import { setClaudeSettings } from './adapters/claude'
 import { CommandStore } from './commands'
+import { fileDiff, gitChanges, gitStatus, listBranches, listWorktrees, removeWorktree, requireWorktree, runGitAction } from './git'
 import { listPlugins, setPluginEnabled } from './plugins'
 import { UsageTracker } from './usage'
 import { exportEnvironment, importEnvironment } from './exchange'
@@ -244,17 +245,22 @@ function registerIpc(): void {
     const worktree = req.worktree ? await createWorktree(env.cwd, id, req.worktree.name) : null
     const number = env.sessions.length + 1
     const origin = env.sessions.find((s) => s.id === req.terminalOfSessionId)
+    // Só uma worktree que o Git lista para o repositório do ambiente.
+    const inWorktree = req.terminalInWorktree ? (await requireWorktree(env.cwd, req.terminalInWorktree)).path : null
+    // Só comandos salvos para o projeto do ambiente; o renderer não manda texto para executar.
+    const command = req.runCommandId ? commands.list(env.projectId).find((c) => c.id === req.runCommandId) : undefined
+    if (req.runCommandId && (!command || req.adapterId !== 'shell')) throw new Error('Comando não encontrado.')
     const session = {
       id,
       adapterId: req.adapterId,
-      title: worktree?.name ?? `${req.adapterId === 'shell' ? 'Terminal' : 'Sessão'} ${number}`,
-      cwd: worktree?.path ?? origin?.cwd ?? env.cwd,
+      title: worktree?.name ?? (command ? command.name || command.command : `${req.adapterId === 'shell' ? 'Terminal' : 'Sessão'} ${number}`),
+      cwd: worktree?.path ?? inWorktree ?? origin?.cwd ?? env.cwd,
       worktreeBranch: worktree?.branch,
       started: true
     }
     env.sessions.push(session)
     requireStore().flush()
-    await manager.start({ ...session, started: false })
+    await manager.start({ ...session, started: false }, command ? `${command.command}\r` : undefined)
     return { session, missingInWorktree: worktree?.missing ?? [] }
   })
   ipcMain.handle('session:start', async (_e, envId: string, id: string) => {
@@ -283,6 +289,36 @@ function registerIpc(): void {
   ipcMain.on('pty:write', (_e, id: string, data: string) => manager.write(id, data))
   ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => manager.resize(id, cols, rows))
 
+  const requireDir = (cwd: string): string => {
+    if (typeof cwd !== 'string' || !existsSync(cwd)) throw new Error('A pasta não existe mais.')
+    return cwd
+  }
+  ipcMain.handle('git:status', (_e, cwd: string) => (existsSync(cwd) ? gitStatus(cwd) : null))
+  ipcMain.handle('git:changes', (_e, cwd: string) => (existsSync(cwd) ? gitChanges(cwd) : null))
+  ipcMain.handle('git:file-diff', (_e, cwd: string, path: string) => fileDiff(requireDir(cwd), path))
+  ipcMain.handle('git:branches', (_e, cwd: string) => listBranches(requireDir(cwd)))
+  ipcMain.handle('git:worktrees', (_e, cwd: string) => listWorktrees(requireDir(cwd)))
+  ipcMain.handle('git:action', async (_e, cwd: string, action: GitAction) => {
+    try {
+      return await runGitAction(requireDir(cwd), action)
+    } finally {
+      send('git:changed')
+    }
+  })
+  ipcMain.handle('git:remove-worktree', async (_e, cwd: string, path: string) => {
+    const worktree = await requireWorktree(requireDir(cwd), path)
+    // Remover a pasta debaixo de um processo em uso deixaria a sessão quebrada.
+    const inUse = (store?.all() ?? []).flatMap((env) => env.sessions).filter((s) => {
+      const state = manager.list().find((st) => st.id === s.id)
+      return state?.running && resolve(s.cwd).toLowerCase().startsWith(resolve(worktree.path).toLowerCase())
+    })
+    if (inUse.length > 0) throw new Error(`Feche antes as sessões que usam esta worktree: ${inUse.map((s) => s.title).join(', ')}.`)
+    await removeWorktree(cwd, path)
+    send('git:changed')
+  })
+  ipcMain.handle('git:open-folder', async (_e, cwd: string, path: string) => {
+    await shell.openPath((await requireWorktree(requireDir(cwd), path)).path)
+  })
   ipcMain.handle('commands:list', (_e, projectId: string) => commands.list(projectId))
   ipcMain.handle('commands:save', (_e, projectId: string, draft: CommandDraft, id?: string) => {
     const saved = commands.save(projectId, draft, typeof id === 'string' ? id : undefined)

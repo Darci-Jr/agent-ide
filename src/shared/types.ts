@@ -50,6 +50,78 @@ export interface ClaudeUsage {
   updatedAt: number
 }
 
+/** Estado do Git da pasta de uma sessão, mostrado no rodapé. */
+export interface GitStatus {
+  /** Nome da branch, ou o commit curto quando não há branch. */
+  branch: string | null
+  detached: boolean
+  ahead: number
+  behind: number
+  upstream: boolean
+  /** Arquivos alterados, inclusive os novos. */
+  changed: number
+  /** Só os já versionados: são os que uma troca de branch poderia perder. */
+  tracked: number
+  root: string
+  /** Nome da worktree, quando a pasta é uma worktree ligada. */
+  worktree: string | null
+}
+
+export interface GitWorktree {
+  path: string
+  name: string
+  branch: string | null
+  /** A pasta principal do repositório. */
+  main: boolean
+  /** A worktree da sessão em uso. */
+  current: boolean
+}
+
+export type GitAction =
+  | { kind: 'switch'; branch: string }
+  | { kind: 'create'; branch: string }
+  | { kind: 'fetch' }
+  | { kind: 'pull' }
+  | { kind: 'push' }
+
+/** Um arquivo alterado em relação ao último commit, somando stage e não stage. */
+export interface GitChange {
+  /** Caminho a partir da raiz do repositório. */
+  path: string
+  /** Caminho antigo, quando o arquivo foi renomeado. */
+  from: string | null
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
+  additions: number
+  deletions: number
+  binary: boolean
+}
+
+export interface GitChanges {
+  root: string
+  branch: string | null
+  files: GitChange[]
+}
+
+export interface DiffLine {
+  type: 'add' | 'del' | 'ctx' | 'hunk'
+  oldNo: number | null
+  newNo: number | null
+  text: string
+}
+
+export interface FileDiff {
+  binary: boolean
+  /** Diff grande demais: só as primeiras linhas vieram. */
+  truncated: boolean
+  lines: DiffLine[]
+}
+
+/** Painel de alterações. Sem pasta (ambiente importado), usa a do ambiente. */
+export interface DiffPanelParams {
+  kind: 'diff'
+  cwd: string | null
+}
+
 /** Ícones que um comando pode usar. Os desenhos ficam em `renderer/src/icons.tsx`. */
 export const COMMAND_ICONS = [
   'play',
@@ -124,6 +196,7 @@ export interface SessionContext {
 export interface Preferences {
   showUsage: boolean
   showContext: boolean
+  showGit: boolean
 }
 
 /** O que estava aberto, para a IDE voltar como estava. `activeId` nulo é a tela inicial. */
@@ -218,6 +291,10 @@ export interface CreateSessionRequest {
   worktree?: { name: string | null }
   /** Abre um terminal avulso na pasta desta sessão; sem ela, na pasta do ambiente. */
   terminalOfSessionId?: string
+  /** Abre o terminal nesta worktree do repositório do ambiente. */
+  terminalInWorktree?: string
+  /** Id de um comando salvo do projeto: o terminal novo o executa assim que o prompt aparece. */
+  runCommandId?: string
 }
 
 export interface CreateSessionResult {
@@ -272,6 +349,19 @@ export interface IdeApi {
   onUsage(cb: (usage: ClaudeUsage | null) => void): () => void
   getContext(sessionId: string): Promise<SessionContext | null>
   onContext(cb: (sessionId: string, context: SessionContext | null) => void): () => void
+  gitStatus(cwd: string): Promise<GitStatus | null>
+  gitBranches(cwd: string): Promise<string[]>
+  gitWorktrees(cwd: string): Promise<GitWorktree[]>
+  /** Devolve uma mensagem curta de sucesso. */
+  gitAction(cwd: string, action: GitAction): Promise<string>
+  removeWorktree(cwd: string, path: string): Promise<void>
+  openWorktreeFolder(cwd: string, path: string): Promise<void>
+  /** Alterações da pasta em relação ao último commit. Nulo se não for um repositório. */
+  gitChanges(cwd: string): Promise<GitChanges | null>
+  /** Só aceita um arquivo da lista de alterações. */
+  gitFileDiff(cwd: string, path: string): Promise<FileDiff>
+  /** Alguma ação de Git terminou: o rodapé relê o estado. */
+  onGitChanged(cb: () => void): () => void
   /** Gerais e do projeto, nessa ordem. */
   listCommands(projectId: string): Promise<CustomCommand[]>
   saveCommand(projectId: string, draft: CommandDraft, id?: string): Promise<CustomCommand>

@@ -3,7 +3,7 @@ import { isAbsolute } from 'node:path'
 import type { Environment, TemplateId } from '../shared/types'
 
 const FORMAT_VERSION = 1
-const PANEL_COMPONENTS = new Set(['terminal', 'editor', 'markdown', 'plugins'])
+const PANEL_COMPONENTS = new Set(['terminal', 'editor', 'markdown', 'plugins', 'diff'])
 const TEMPLATES = new Set<TemplateId>(['multi', 'think', 'blank'])
 
 interface ExportedSession {
@@ -41,6 +41,8 @@ export function exportEnvironment(env: Environment, layout: unknown): string {
           const local = !params.path || isAbsoluteAnywhere(params.path) || hasParentSegment(params.path)
           return { ...panel, params: { ...params, path: local ? null : params.path }, title: local ? 'Arquivo' : panel.title }
         }
+        // A pasta é desta máquina: quem importar vê as alterações do próprio projeto.
+        if (params.kind === 'diff') return { ...panel, params: { kind: 'diff', cwd: null }, title: 'Alterações' }
         return panel
       })
     : null
@@ -90,6 +92,7 @@ export function importEnvironment(text: string, cwd: string, projectId: string, 
     if (!PANEL_COMPONENTS.has(panel?.contentComponent)) fail('painel desconhecido')
     const params = panel.params ?? {}
     if (params.kind === 'terminal' && !known.has(params.sessionId)) fail('painel sem sessão')
+    if (params.kind === 'diff') panel.params = { kind: 'diff', cwd: null }
     if (params.path != null) {
       if (typeof params.path !== 'string' || isAbsoluteAnywhere(params.path) || hasParentSegment(params.path)) {
         fail('caminho fora do projeto')

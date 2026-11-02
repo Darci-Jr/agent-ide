@@ -1,9 +1,10 @@
 import type { DockviewApi } from 'dockview-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import type { AdapterInfo, ClaudeUsage, Environment, Preferences, SessionContext, SessionState } from '../../shared/types'
+import type { AdapterInfo, ClaudeUsage, CustomCommand, Environment, GitStatus, Preferences, SessionContext, SessionState } from '../../shared/types'
 import { SettingsDialog } from './SettingsDialog'
 import { UsageBar } from './UsageBar'
-import { INTERRUPTED_TIP, unsavedPanels } from './context'
+import { CommandButtons } from './CommandButtons'
+import { commandRunners, INTERRUPTED_TIP, unsavedPanels } from './context'
 import { EnvironmentView } from './EnvironmentView'
 import { Home } from './Home'
 import { IconButton } from './icons'
@@ -40,7 +41,7 @@ export function App(): ReactNode {
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [toast, setToast] = useState<string | null>(null)
   const [usage, setUsage] = useState<ClaudeUsage | null>(null)
-  const [prefs, setPrefs] = useState<Preferences>({ showUsage: true, showContext: true })
+  const [prefs, setPrefs] = useState<Preferences>({ showUsage: true, showContext: true, showGit: true })
   // Sessão em uso em cada ambiente, e o contexto já lido de cada sessão.
   const [activeSessions, setActiveSessions] = useState<Record<string, string>>({})
   const [contexts, setContexts] = useState<Record<string, SessionContext | null>>({})
@@ -53,6 +54,22 @@ export function App(): ReactNode {
 
   const states = useMemo(() => new Map(stateList.map((s) => [s.id, s])), [stateList])
   const active = environments.find((e) => e.id === activeId) ?? null
+
+  // Comandos do projeto do ambiente ativo: viram botões na aba dele.
+  const activeProjectId = active?.projectId ?? null
+  const [commands, setCommands] = useState<CustomCommand[]>([])
+  useEffect(() => {
+    setCommands([])
+    if (!activeProjectId) return
+    let alive = true
+    const load = (): void => void ide.listCommands(activeProjectId).then((list) => alive && setCommands(list), () => alive && setCommands([]))
+    load()
+    const off = ide.onCommandsChanged(load)
+    return () => {
+      alive = false
+      off()
+    }
+  }, [activeProjectId])
   const openEnvs = openIds.map((id) => environments.find((e) => e.id === id)).filter((e): e is Environment => Boolean(e))
 
   useEffect(() => {
@@ -94,6 +111,29 @@ export function App(): ReactNode {
     const id = activeClaude.id
     void ide.getContext(id).then((context) => setContexts((all) => ({ ...all, [id]: context })))
   }, [activeClaude?.id])
+
+  // Git da pasta da sessão em uso; sem sessão escolhida, o do projeto do ambiente.
+  const gitCwd = activeSession?.cwd ?? active?.cwd ?? null
+  const [git, setGit] = useState<GitStatus | null>(null)
+  useEffect(() => {
+    setGit(null)
+    if (!gitCwd || !prefs.showGit) return
+    let alive = true
+    const read = (): void => {
+      ide.gitStatus(gitCwd).then(
+        (status) => alive && setGit(status),
+        () => alive && setGit(null)
+      )
+    }
+    read()
+    const timer = setInterval(read, 5000)
+    const off = ide.onGitChanged(read)
+    return () => {
+      alive = false
+      clearInterval(timer)
+      off()
+    }
+  }, [gitCwd, prefs.showGit])
 
   const changePrefs = (next: Preferences): void => {
     setPrefs(next)
@@ -303,6 +343,7 @@ export function App(): ReactNode {
                 </span>
               )}
               <IconButton icon="close" label={`Fechar ${env.name}`} className="env-close" onClick={() => requestClose(env)} />
+              {env.id === activeId && <CommandButtons commands={commands} onRun={(c) => commandRunners.get(env.id)?.(c)} />}
             </div>
           ))}
         </div>
@@ -344,17 +385,18 @@ export function App(): ReactNode {
         ))}
       </main>
 
-      {(prefs.showUsage || prefs.showContext) && (
+      {(prefs.showUsage || prefs.showContext || prefs.showGit) && (
         <UsageBar
           usage={usage}
           context={activeClaude ? { title: activeClaude.title, data: contexts[activeClaude.id] ?? null } : null}
           showUsage={prefs.showUsage}
           showContext={prefs.showContext}
+          git={prefs.showGit && activeId ? git : null}
         />
       )}
 
       {modal?.kind === 'settings' && (
-        <SettingsDialog prefs={prefs} changePrefs={changePrefs} projectId={active?.projectId ?? null} onClose={() => setModal(null)} />
+        <SettingsDialog prefs={prefs} changePrefs={changePrefs} onClose={() => setModal(null)} />
       )}
 
       {modal?.kind === 'export' && (

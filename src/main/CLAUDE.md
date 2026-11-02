@@ -15,6 +15,7 @@ Quem instala ou testa o app usa perfil próprio: nos testes, defina `AGENT_IDE_U
 - **Importar ambientes:** o arquivo não é confiável. `exchange.ts` aceita só agentes conhecidos, nunca comandos, recusa caminhos fora do projeto, e nenhuma sessão inicia ao importar.
 - **Exportar ambientes:** não pode levar caminhos da máquina, ids de sessão, conversas nem conteúdo de arquivos. Campo novo em `Environment` ou nos painéis: confira `exportEnvironment` e os testes.
 - **Regra de `deny`:** bloqueia `Read` e foi negada também para `cat`, mas outras formas de ler o arquivo não foram testadas. Não a apresente como garantia absoluta.
+- **Comandos personalizados:** o renderer só manda o id (`runCommandId`); o texto vem do `CommandStore` do projeto do ambiente.
 - **Worktrees:** nunca apague automaticamente, e nunca copie `.env` para elas; só avise.
 
 ## Armadilhas

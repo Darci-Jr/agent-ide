@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Environment } from '../shared/types'
 import { worktreeSlug } from '../shared/worktreeName'
 import { listHistory } from './history'
-import { exportEnvironment } from './exchange'
+import { exportEnvironment, importEnvironment } from './exchange'
 import { EnvironmentStore } from './store'
 import { validateProjectName, Workspace } from './workspace'
 
@@ -66,6 +66,14 @@ describe('restauração', () => {
   it('a exportação não leva o estado de execução', () => {
     const text = exportEnvironment(env({ sessions: [{ ...session, working: true, interrupted: true }] }), null)
     expect(text).not.toMatch(/shouldRun|working|interrupted/)
+  })
+
+  it('o painel de alterações não leva a pasta da máquina', () => {
+    const layout = { panels: { d: { id: 'd', contentComponent: 'diff', title: 'Alterações · main', params: { kind: 'diff', cwd: 'C:\\Users\\alguem\\repo' } } } }
+    const text = exportEnvironment(env({ sessions: [] }), layout)
+    expect(text).not.toContain('alguem')
+    const imported = importEnvironment(text, 'C:\\outro', 'p', ['claude'])
+    expect((imported.layout as any).panels.d.params).toEqual({ kind: 'diff', cwd: null })
   })
 })
 

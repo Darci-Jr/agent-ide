@@ -61,10 +61,12 @@ Um novo canal de IPC passa por três arquivos: `shared/types.ts`, `preload/index
 - Sessão que trabalhava quando foi encerrada mostra "Atenção" até a pessoa digitar nela ou dispensar.
 - Fechar uma aba não apaga o ambiente; apagar é uma ação separada.
 - Fechar sessão ou terminal é direto, sem confirmação.
-- A barra lateral tem ações separadas: nova sessão, terminal na pasta da sessão atual e sessão do Claude em worktree. Não há menu de opções. Configurações ficam no pé da barra.
-- O rodapé da IDE mostra só o uso do Claude (5h e semana) e a janela de contexto da sessão do Claude em uso, sem textos explicativos. Cada indicador tem sua opção nas configurações. O rodapé é independente do terminal: as opções não mudam nada nas sessões.
+- A barra lateral tem ações separadas: nova sessão, terminal na pasta da sessão atual, sessão do Claude em worktree, Git, Plugins e Comandos. Não há menu de opções. Configurações ficam no pé da barra e só tratam do rodapé.
+- O rodapé só mostra estado, nunca tem ações: uso do Claude (5h e semana), contexto da sessão do Claude em uso e, à direita, o Git da sessão em uso. Sem textos explicativos. Cada indicador tem sua opção nas configurações, e nenhuma muda algo nas sessões.
+- Ações de Git ficam no ícone Git da barra lateral e nunca forçam: trocar de branch é recusado com alterações versionadas, pull é só `--ff-only`, push não força e remover worktree pede confirmação e recusa uma em uso.
+- "Ver alterações", no menu Git, abre o painel Alterações: diff unificado da pasta contra o último commit, com stage, sem stage e arquivos novos juntos. É só leitura, sem stage nem descarte. O painel guarda a pasta onde abriu, e há um por pasta.
 - O painel de plugins ativa e desativa pelo `claude plugin` oficial. Nunca reinicia sessões: avisa quais precisam reiniciar ou de `/reload-plugins`.
-- Comandos personalizados, por projeto ou para todos, viram botões só nas abas de terminal, nunca nas do Claude. O clique executa na hora. Na aba, o X vem antes deles, e acima de 4 o resto vai para um menu.
+- Comandos personalizados são criados pelo ícone Comandos da barra lateral, não nas configurações. Por projeto ou para todos, viram botões na aba do ambiente ativo, na barra de cima, e nas abas de terminal, nunca nas do Claude. Cada clique abre um terminal novo na pasta da sessão em uso e executa o comando nele. O X vem antes deles, e acima de 4 o resto vai para um menu.
 - Temas claro (padrão) e escuro em toda tela nova.
 - Open source, com licença MIT. O repositório ainda é privado.
 

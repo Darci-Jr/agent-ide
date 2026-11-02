@@ -40,7 +40,7 @@ process.stdin.on('end', () => {
 })
 `
 
-const DEFAULT_PREFERENCES: Preferences = { showUsage: true, showContext: true }
+const DEFAULT_PREFERENCES: Preferences = { showUsage: true, showContext: true, showGit: true }
 
 /** Cuida dos arquivos da linha de status e das preferências, todos no perfil do app. */
 export class UsageTracker {
@@ -105,14 +105,14 @@ export class UsageTracker {
   preferences(): Preferences {
     try {
       const saved = JSON.parse(readFileSync(this.prefsPath, 'utf8')) as Partial<Preferences>
-      return { showUsage: saved.showUsage !== false, showContext: saved.showContext !== false }
+      return { showUsage: saved.showUsage !== false, showContext: saved.showContext !== false, showGit: saved.showGit !== false }
     } catch {
       return { ...DEFAULT_PREFERENCES }
     }
   }
 
   savePreferences(prefs: Preferences): void {
-    writeJsonAtomic(this.prefsPath, { showUsage: Boolean(prefs.showUsage), showContext: Boolean(prefs.showContext) })
+    writeJsonAtomic(this.prefsPath, { showUsage: Boolean(prefs.showUsage), showContext: Boolean(prefs.showContext), showGit: Boolean(prefs.showGit) })
   }
 
   /**

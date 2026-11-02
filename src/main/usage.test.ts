@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { cleanDraft, CommandStore } from './commands'
+import { parseChanges, parseDiff, parseStatus } from './git'
 import { readPluginFolder } from './plugins'
 import { STATUS_LINE_SCRIPT, UsageTracker } from './usage'
 
@@ -67,9 +68,9 @@ describe('UsageTracker', () => {
   it('lembra cada opção do rodapé e esquece a sessão removida', () => {
     const t = tracker()
     try {
-      expect(t.preferences()).toEqual({ showUsage: true, showContext: true })
-      t.savePreferences({ showUsage: true, showContext: false })
-      expect(t.preferences()).toEqual({ showUsage: true, showContext: false })
+      expect(t.preferences()).toEqual({ showUsage: true, showContext: true, showGit: true })
+      t.savePreferences({ showUsage: true, showContext: false, showGit: true })
+      expect(t.preferences()).toEqual({ showUsage: true, showContext: false, showGit: true })
       const settings = t.settingsFor('s1', dir)
       t.forget('s1')
       expect(existsSync(settings)).toBe(false)
@@ -130,5 +131,46 @@ describe('comandos', () => {
     expect(cleanDraft({ ...draft, command: 'npm test\r\nrm -rf x' }).command).toBe('npm test rm -rf x')
     expect(() => cleanDraft({ ...draft, command: '  ' })).toThrow()
     expect(() => cleanDraft({ ...draft, icon: 'nada' as never })).toThrow()
+  })
+})
+
+describe('git', () => {
+  it('lê branch, distância do remoto e arquivos alterados', () => {
+    const text = [
+      '# branch.oid 1234567890abcdef',
+      '# branch.head corrigir-login',
+      '# branch.upstream origin/corrigir-login',
+      '# branch.ab +2 -1',
+      '1 .M N... 100644 100644 100644 a b src/a.ts',
+      '? novo.txt'
+    ].join('\n')
+    expect(parseStatus(text)).toEqual({ branch: 'corrigir-login', detached: false, ahead: 2, behind: 1, upstream: true, changed: 2, tracked: 1 })
+  })
+
+  it('sem branch, mostra o commit curto', () => {
+    expect(parseStatus('# branch.oid 1234567890abcdef\n# branch.head (detached)\n')).toMatchObject({ branch: '1234567', detached: true, upstream: false })
+  })
+
+  it('junta situação e contagem de linhas, inclusive renomeados e binários', () => {
+    const nameStatus = ['M', 'src/a.ts', 'R090', 'velho.ts', 'novo.ts', 'A', 'img.png', 'D', 'fora.md', ''].join('\0')
+    const numstat = ['3\t1\tsrc/a.ts', '2\t2\t', 'velho.ts', 'novo.ts', '-\t-\timg.png', '0\t7\tfora.md', ''].join('\0')
+    expect(parseChanges(nameStatus, numstat)).toEqual([
+      { path: 'src/a.ts', from: null, status: 'modified', additions: 3, deletions: 1, binary: false },
+      { path: 'novo.ts', from: 'velho.ts', status: 'renamed', additions: 2, deletions: 2, binary: false },
+      { path: 'img.png', from: null, status: 'added', additions: 0, deletions: 0, binary: true },
+      { path: 'fora.md', from: null, status: 'deleted', additions: 0, deletions: 7, binary: false }
+    ])
+  })
+
+  it('numera as linhas do diff e corta os grandes', () => {
+    const text = ['diff --git a/x b/x', '--- a/x', '+++ b/x', '@@ -10,3 +10,3 @@ fn()', ' igual', '-velha\r', '+nova', '\\ No newline at end of file', ''].join('\n')
+    expect(parseDiff(text).lines).toEqual([
+      { type: 'hunk', oldNo: null, newNo: null, text: '@@ -10,3 +10,3 @@ fn()' },
+      { type: 'ctx', oldNo: 10, newNo: 10, text: 'igual' },
+      { type: 'del', oldNo: 11, newNo: null, text: 'velha' },
+      { type: 'add', oldNo: null, newNo: 11, text: 'nova' }
+    ])
+    expect(parseDiff(text, 2)).toMatchObject({ truncated: true })
+    expect(parseDiff('diff --git a/i b/i\nBinary files a/i and b/i differ\n')).toEqual({ binary: true, truncated: false, lines: [] })
   })
 })

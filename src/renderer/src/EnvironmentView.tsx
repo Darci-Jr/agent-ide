@@ -8,8 +8,9 @@ import {
 } from 'dockview-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { PluginsPanel } from './panels/PluginsPanel'
-import type { AdapterInfo, CreateSessionRequest, CustomCommand, Environment, FilePanelParams, PluginsPanelParams, SessionSpec, SessionState, TerminalPanelParams } from '../../shared/types'
-import { EnvContext, INTERRUPTED_TIP, unsavedPanels, type EnvContextValue } from './context'
+import { DiffPanel } from './panels/DiffPanel'
+import type { AdapterInfo, CreateSessionRequest, CustomCommand, DiffPanelParams, Environment, FilePanelParams, PluginsPanelParams, SessionSpec, SessionState, TerminalPanelParams } from '../../shared/types'
+import { commandRunners, EnvContext, INTERRUPTED_TIP, unsavedPanels, type EnvContextValue } from './context'
 import { FileDrawer } from './FileDrawer'
 import { IconButton } from './icons'
 import { errorMessage, ide } from './ide'
@@ -17,16 +18,20 @@ import { EditorPanel } from './panels/EditorPanel'
 import { MarkdownPanel } from './panels/MarkdownPanel'
 import { PanelTab } from './panels/PanelTab'
 import { TerminalPanel } from './panels/TerminalPanel'
+import { GitMenu } from './GitMenu'
+import { CommandsDialog } from './CommandsDialog'
 import { WorktreeDialog } from './WorktreeDialog'
 import { disposeTerminal, focusTerminal, resetTerminal, syncTerminalSize, type Theme } from './terminals'
 
-const components = { terminal: TerminalPanel, editor: EditorPanel, markdown: MarkdownPanel, plugins: PluginsPanel }
+const components = { terminal: TerminalPanel, editor: EditorPanel, markdown: MarkdownPanel, plugins: PluginsPanel, diff: DiffPanel }
 
 const termPanelId = (sessionId: string): string => `term:${sessionId}`
 const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path
+const samePath = (a: string, b: string): boolean => a.replace(/[\\/]+/g, '/').toLowerCase() === b.replace(/[\\/]+/g, '/').toLowerCase()
 
-const paramsOf = (panel: IDockviewPanel): TerminalPanelParams | FilePanelParams =>
-  panel.params as unknown as TerminalPanelParams | FilePanelParams
+type AnyPanelParams = TerminalPanelParams | FilePanelParams | DiffPanelParams | PluginsPanelParams
+
+const paramsOf = (panel: IDockviewPanel): AnyPanelParams => panel.params as unknown as AnyPanelParams
 
 /** Divide o maior grupo pelo lado mais longo, formando uma grade naturalmente. */
 function placeInGrid(api: DockviewApi): { referenceGroup: string; direction: 'right' | 'below' } | undefined {
@@ -57,6 +62,10 @@ export function EnvironmentView(props: {
   const [focusId, setFocusId] = useState<string | null>(null)
   const [filesOpen, setFilesOpen] = useState(false)
   const [worktreeOpen, setWorktreeOpen] = useState(false)
+  const [commandsOpen, setCommandsOpen] = useState(false)
+  // Altura do ícone Git quando o menu está aberto; nulo com ele fechado.
+  const [gitMenuAt, setGitMenuAt] = useState<number | null>(null)
+  const gitButton = useRef<HTMLSpanElement>(null)
   const [commands, setCommands] = useState<CustomCommand[]>([])
   useEffect(() => {
     const load = (): void => void ide.listCommands(env.projectId).then(setCommands, () => setCommands([]))
@@ -127,6 +136,20 @@ export function EnvironmentView(props: {
     [placeNewSession, toast]
   )
 
+  const runCommand = useCallback(
+    (command: CustomCommand) =>
+      placeNewSession({ adapterId: 'shell', terminalOfSessionId: lastSessionId.current || undefined, runCommandId: command.id }, true).catch((err) =>
+        toast(errorMessage(err))
+      ),
+    [placeNewSession, toast]
+  )
+  useEffect(() => {
+    commandRunners.set(env.id, runCommand)
+    return () => {
+      commandRunners.delete(env.id)
+    }
+  }, [env.id, runCommand])
+
   const claudeAvailable = adapters.some((a) => a.id === 'claude' && a.available)
   const defaultAdapter = adapters.find((a) => a.available)?.id ?? 'shell'
   const defaultAdapterRef = useRef(defaultAdapter)
@@ -180,6 +203,26 @@ export function EnvironmentView(props: {
     }
     dock.addPanel<PluginsPanelParams>({ id: 'plugins', component: 'plugins', title: 'Plugins', params: { kind: 'plugins' }, position: placeInGrid(dock) })
   }, [setFocus])
+
+  /** Um painel por pasta: abrir de novo a mesma pasta só traz o painel para a frente. */
+  const openDiff = useCallback(
+    (cwd: string) => {
+      const dock = apiRef.current
+      if (!dock) return
+      if (dock.hasMaximizedGroup()) setFocus(null)
+      const existing = dock.panels.find((p) => {
+        const params = paramsOf(p)
+        return params.kind === 'diff' && samePath(params.cwd ?? envRef.current.cwd, cwd)
+      })
+      if (existing) {
+        existing.api.setActive()
+        return
+      }
+      // Id aleatório, para o caminho não vazar na exportação.
+      dock.addPanel<DiffPanelParams>({ id: `diff:${crypto.randomUUID()}`, component: 'diff', title: 'Alterações', params: { kind: 'diff', cwd }, position: placeInGrid(dock) })
+    },
+    [setFocus]
+  )
 
   const closePanel = useCallback(
     (panelId: string) => {
@@ -236,11 +279,12 @@ export function EnvironmentView(props: {
         else unsavedPanels.delete(panelId)
       },
       commands,
+      runCommand,
       claudeSessions: props.claudeSessions,
       pluginsChangedAt: props.pluginsChangedAt,
       markPluginsChanged: props.onPluginsChanged
     }),
-    [closePanel, commands, env, focusId, openFile, props.states, props.theme, props.claudeSessions, props.pluginsChangedAt, props.onPluginsChanged, setFocus, toast, updateSession]
+    [closePanel, commands, runCommand, env, focusId, openFile, props.states, props.theme, props.claudeSessions, props.pluginsChangedAt, props.onPluginsChanged, setFocus, toast, updateSession]
   )
 
   const onReady = (event: DockviewReadyEvent): void => {
@@ -307,12 +351,44 @@ export function EnvironmentView(props: {
           disabled={!claudeAvailable}
           onClick={() => setWorktreeOpen(true)}
         />
+        <span ref={gitButton} className="rail-anchor">
+          <IconButton
+            icon="git"
+            label="Git"
+            className={gitMenuAt !== null ? 'on' : ''}
+            onClick={() => setGitMenuAt(gitMenuAt === null ? (gitButton.current?.firstElementChild?.getBoundingClientRect().top ?? 100) : null)}
+          />
+        </span>
         <IconButton icon="plugins" label="Plugins" onClick={openPlugins} />
+        <IconButton icon="commands" label="Comandos" className={commandsOpen ? 'on' : ''} onClick={() => setCommandsOpen(true)} />
         <IconButton icon="openFolder" label="Abrir pasta do projeto" onClick={() => void ide.openProjectFolder(env.projectId)} />
         <div className="rail-space" />
         <IconButton icon="settings" label="Configurações" onClick={props.openSettings} />
         <IconButton icon={props.theme === 'light' ? 'moon' : 'sun'} label={props.theme === 'light' ? 'Tema escuro' : 'Tema claro'} onClick={props.toggleTheme} />
       </nav>
+
+      {gitMenuAt !== null && (
+        <GitMenu
+          cwd={env.sessions.find((s) => s.id === lastSessionId.current)?.cwd ?? env.cwd}
+          top={gitMenuAt}
+          sessionsInFolder={(root) =>
+            env.sessions
+              .filter((s) => s.id !== lastSessionId.current && props.states.get(s.id)?.running && samePath(s.cwd, root))
+              .map((s) => s.title)
+          }
+          openTerminal={(path) => {
+            setGitMenuAt(null)
+            placeNewSession({ adapterId: 'shell', terminalInWorktree: path }, true).catch((err) => toast(errorMessage(err)))
+          }}
+          openDiff={(root) => {
+            setGitMenuAt(null)
+            openDiff(root)
+          }}
+          onClose={() => setGitMenuAt(null)}
+        />
+      )}
+
+      {commandsOpen && <CommandsDialog projectId={env.projectId} onClose={() => setCommandsOpen(false)} />}
 
       {worktreeOpen && (
         <WorktreeDialog
