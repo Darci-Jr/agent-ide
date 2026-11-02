@@ -1,7 +1,9 @@
 import type { DockviewApi } from 'dockview-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import type { AdapterInfo, Environment, SessionState } from '../../shared/types'
-import { unsavedPanels } from './context'
+import type { AdapterInfo, ClaudeUsage, Environment, Preferences, SessionContext, SessionState } from '../../shared/types'
+import { SettingsDialog } from './SettingsDialog'
+import { UsageBar } from './UsageBar'
+import { INTERRUPTED_TIP, unsavedPanels } from './context'
 import { EnvironmentView } from './EnvironmentView'
 import { Home } from './Home'
 import { IconButton } from './icons'
@@ -23,6 +25,7 @@ type Modal =
   | { kind: 'export' }
   | { kind: 'save'; env: Environment; closeAfter: boolean }
   | { kind: 'close-draft'; env: Environment }
+  | { kind: 'settings' }
 
 export function App(): ReactNode {
   // undefined: ainda carregando; null: primeiro uso, sem pasta escolhida.
@@ -36,7 +39,17 @@ export function App(): ReactNode {
   const [saveName, setSaveName] = useState('')
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [toast, setToast] = useState<string | null>(null)
+  const [usage, setUsage] = useState<ClaudeUsage | null>(null)
+  const [prefs, setPrefs] = useState<Preferences>({ showUsage: true, showContext: true })
+  // Sessão em uso em cada ambiente, e o contexto já lido de cada sessão.
+  const [activeSessions, setActiveSessions] = useState<Record<string, string>>({})
+  const [contexts, setContexts] = useState<Record<string, SessionContext | null>>({})
+  const [restored, setRestored] = useState(false)
+  const restoring = useRef(false)
   const apis = useRef(new Map<string, DockviewApi>())
+  // Um painel montado em aba oculta mediria zero e estragaria o layout salvo: só monta ao aparecer.
+  const shown = useRef(new Set<string>())
+  if (activeId) shown.current.add(activeId)
 
   const states = useMemo(() => new Map(stateList.map((s) => [s.id, s])), [stateList])
   const active = environments.find((e) => e.id === activeId) ?? null
@@ -46,12 +59,76 @@ export function App(): ReactNode {
     void ide.getWorkspace().then(setWorkspace)
     void ide.listAdapters().then(setAdapters)
     void ide.listSessionStates().then(setStateList)
-    return ide.onSessionStates(setStateList)
+    void ide.getUsage().then(setUsage)
+    void ide.getPreferences().then(setPrefs)
+    const offUsage = ide.onUsage(setUsage)
+    const offContext = ide.onContext((sessionId, context) => setContexts((all) => ({ ...all, [sessionId]: context })))
+    const offStates = ide.onSessionStates(setStateList)
+    return () => {
+      offUsage()
+      offContext()
+      offStates()
+    }
   }, [])
 
+  // Plugins valem para todas as abas: o aviso de reiniciar considera as sessões do Claude de todas.
+  const [pluginsChangedAt, setPluginsChangedAt] = useState(0)
+  const markPluginsChanged = useCallback(() => setPluginsChangedAt(Date.now()), [])
+  const claudeSessions = useMemo(
+    () =>
+      openEnvs.flatMap((env) =>
+        env.sessions.flatMap((s) => {
+          const state = states.get(s.id)
+          return s.adapterId === 'claude' && state?.running && state.startedAt ? [{ id: s.id, title: s.title, startedAt: state.startedAt }] : []
+        })
+      ),
+    // openEnvs é recalculado a cada render; environments e openIds são a origem dele.
+    [environments, openIds, states]
+  )
+
+  const activeSessionId = activeId ? activeSessions[activeId] : undefined
+  const activeSession = active?.sessions.find((s) => s.id === activeSessionId)
+  const activeClaude = activeSession?.adapterId === 'claude' ? activeSession : null
   useEffect(() => {
-    if (workspace) void ide.listEnvironments().then(setEnvironments)
+    if (!activeClaude) return
+    const id = activeClaude.id
+    void ide.getContext(id).then((context) => setContexts((all) => ({ ...all, [id]: context })))
+  }, [activeClaude?.id])
+
+  const changePrefs = (next: Preferences): void => {
+    setPrefs(next)
+    ide.savePreferences(next).catch((err) => setToast(errorMessage(err)))
+  }
+
+  // Volta como estava: as mesmas abas, com as sessões que rodavam já retomadas.
+  useEffect(() => {
+    if (!workspace || restoring.current) return
+    restoring.current = true
+    const restore = async (): Promise<void> => {
+      const [list, tabs] = await Promise.all([ide.listEnvironments(), ide.getOpenTabs()])
+      setEnvironments(list)
+      const ids = tabs.openIds.filter((id) => list.some((e) => e.id === id))
+      const resumed = await Promise.all(ids.map((id) => ide.resumeEnvironment(id)))
+      setEnvironments(list.map((e) => resumed.find((r) => r.id === e.id) ?? e))
+      setOpenIds(ids)
+      setActiveId(tabs.activeId && ids.includes(tabs.activeId) ? tabs.activeId : null)
+    }
+    restore()
+      .catch((err) => setToast(errorMessage(err)))
+      .finally(() => setRestored(true))
   }, [workspace])
+
+  useEffect(() => {
+    if (restored) ide.saveOpenTabs({ openIds, activeId })
+  }, [restored, openIds, activeId])
+
+  // O último ambiente usado é o que está à vista, não o último aberto.
+  useEffect(() => {
+    if (!restored || !activeId) return
+    const now = Date.now()
+    setEnvironments((list) => list.map((e) => (e.id === activeId ? { ...e, lastOpenedAt: now } : e)))
+    void ide.markEnvironmentOpened(activeId)
+  }, [restored, activeId])
 
   useEffect(() => {
     document.documentElement.dataset.theme = theme
@@ -77,7 +154,12 @@ export function App(): ReactNode {
     setEnvironments((list) => (list.some((e) => e.id === env.id) ? list.map((e) => (e.id === env.id ? env : e)) : [...list, env]))
     setOpenIds((ids) => (ids.includes(env.id) ? ids : [...ids, env.id]))
     setActiveId(env.id)
-    void ide.markEnvironmentOpened(env.id)
+  }
+
+  /** Ambiente já existente: se a aba está aberta, só leva até ela. */
+  const resumeEnvironment = async (id: string): Promise<void> => {
+    if (openIds.includes(id)) setActiveId(id)
+    else openEnvironment(await ide.resumeEnvironment(id))
   }
 
   /** Uma conversa já aberta não pode rodar duas vezes: leva à aba onde ela está. */
@@ -90,6 +172,7 @@ export function App(): ReactNode {
   const removeTab = (env: Environment): void => {
     env.sessions.forEach((s) => disposeTerminal(s.id))
     apis.current.delete(env.id)
+    shown.current.delete(env.id)
     setOpenIds((ids) => ids.filter((id) => id !== env.id))
     if (activeId === env.id) {
       const rest = openIds.filter((id) => id !== env.id)
@@ -151,7 +234,7 @@ export function App(): ReactNode {
     }
   }
 
-  if (workspace === undefined) return <div className="app" />
+  if (workspace === undefined || (workspace && !restored)) return <div className="app" />
 
   if (workspace === null) {
     return (
@@ -214,6 +297,11 @@ export function App(): ReactNode {
               >
                 {env.name}
               </button>
+              {env.sessions.some((s) => s.interrupted) && (
+                <span className="attention-mark" role="img" aria-label="Pede atenção" data-tip={INTERRUPTED_TIP}>
+                  !
+                </span>
+              )}
               <IconButton icon="close" label={`Fechar ${env.name}`} className="env-close" onClick={() => requestClose(env)} />
             </div>
           ))}
@@ -229,12 +317,13 @@ export function App(): ReactNode {
           <Home
             environments={environments}
             onOpen={openEnvironment}
+            onResume={resumeEnvironment}
             showOpenSession={showOpenSession}
             onDeleted={(id) => setEnvironments((list) => list.filter((e) => e.id !== id))}
             toast={setToast}
           />
         )}
-        {openEnvs.map((env) => (
+        {openEnvs.filter((env) => shown.current.has(env.id)).map((env) => (
           <EnvironmentView
             key={env.id}
             env={env}
@@ -246,9 +335,27 @@ export function App(): ReactNode {
             onApi={(id, api) => apis.current.set(id, api)}
             toast={setToast}
             toggleTheme={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+            openSettings={() => setModal({ kind: 'settings' })}
+            claudeSessions={claudeSessions}
+            pluginsChangedAt={pluginsChangedAt}
+            onPluginsChanged={markPluginsChanged}
+            onActiveSession={(sessionId) => setActiveSessions((all) => (all[env.id] === sessionId ? all : { ...all, [env.id]: sessionId }))}
           />
         ))}
       </main>
+
+      {(prefs.showUsage || prefs.showContext) && (
+        <UsageBar
+          usage={usage}
+          context={activeClaude ? { title: activeClaude.title, data: contexts[activeClaude.id] ?? null } : null}
+          showUsage={prefs.showUsage}
+          showContext={prefs.showContext}
+        />
+      )}
+
+      {modal?.kind === 'settings' && (
+        <SettingsDialog prefs={prefs} changePrefs={changePrefs} projectId={active?.projectId ?? null} onClose={() => setModal(null)} />
+      )}
 
       {modal?.kind === 'export' && (
         <div className="overlay">

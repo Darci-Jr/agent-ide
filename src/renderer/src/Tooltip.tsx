@@ -19,8 +19,11 @@ export function Tooltip(): ReactNode {
 
   useEffect(() => {
     let timer: ReturnType<typeof setTimeout> | undefined
+    let pressedAt = 0
     const show = (e: Event): void => {
       clearTimeout(timer)
+      // O clique também dá foco ao botão: sem isto, a dica voltaria por cima de um menu recém-aberto.
+      if (e.type === 'focusin' && Date.now() - pressedAt < 300) return
       const el = (e.target as Element | null)?.closest?.('[data-tip]')
       if (!el) {
         setTip(null)
@@ -31,7 +34,8 @@ export function Tooltip(): ReactNode {
       // O teclado não espera: quem navega com Tab precisa da dica na hora.
       timer = setTimeout(() => setTip({ text, target }), e.type === 'focusin' ? 0 : SHOW_DELAY_MS)
     }
-    const hide = (): void => {
+    const hide = (e: Event): void => {
+      if (e.type === 'mousedown') pressedAt = Date.now()
       clearTimeout(timer)
       setTip(null)
     }

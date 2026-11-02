@@ -7,8 +7,9 @@ import {
   type IDockviewPanel
 } from 'dockview-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import type { AdapterInfo, Environment, FilePanelParams, SessionSpec, SessionState, TerminalPanelParams } from '../../shared/types'
-import { EnvContext, unsavedPanels, type EnvContextValue } from './context'
+import { PluginsPanel } from './panels/PluginsPanel'
+import type { AdapterInfo, CreateSessionRequest, CustomCommand, Environment, FilePanelParams, PluginsPanelParams, SessionSpec, SessionState, TerminalPanelParams } from '../../shared/types'
+import { EnvContext, INTERRUPTED_TIP, unsavedPanels, type EnvContextValue } from './context'
 import { FileDrawer } from './FileDrawer'
 import { IconButton } from './icons'
 import { errorMessage, ide } from './ide'
@@ -16,9 +17,10 @@ import { EditorPanel } from './panels/EditorPanel'
 import { MarkdownPanel } from './panels/MarkdownPanel'
 import { PanelTab } from './panels/PanelTab'
 import { TerminalPanel } from './panels/TerminalPanel'
-import { disposeTerminal, resetTerminal, syncTerminalSize, type Theme } from './terminals'
+import { WorktreeDialog } from './WorktreeDialog'
+import { disposeTerminal, focusTerminal, resetTerminal, syncTerminalSize, type Theme } from './terminals'
 
-const components = { terminal: TerminalPanel, editor: EditorPanel, markdown: MarkdownPanel }
+const components = { terminal: TerminalPanel, editor: EditorPanel, markdown: MarkdownPanel, plugins: PluginsPanel }
 
 const termPanelId = (sessionId: string): string => `term:${sessionId}`
 const baseName = (path: string): string => path.split(/[\\/]/).pop() ?? path
@@ -43,17 +45,32 @@ export function EnvironmentView(props: {
   onApi(id: string, api: DockviewApi): void
   toast(message: string): void
   toggleTheme(): void
+  openSettings(): void
+  /** A sessão em uso mudou: o rodapé mostra o contexto dela. */
+  onActiveSession(sessionId: string): void
+  claudeSessions: EnvContextValue['claudeSessions']
+  pluginsChangedAt: number
+  onPluginsChanged(): void
 }): ReactNode {
   const { env, adapters, onChange, onApi, toast } = props
   const [api, setApi] = useState<DockviewApi | null>(null)
   const [focusId, setFocusId] = useState<string | null>(null)
   const [filesOpen, setFilesOpen] = useState(false)
-  const [optionsOpen, setOptionsOpen] = useState(false)
-  const [worktree, setWorktree] = useState(false)
+  const [worktreeOpen, setWorktreeOpen] = useState(false)
+  const [commands, setCommands] = useState<CustomCommand[]>([])
+  useEffect(() => {
+    const load = (): void => void ide.listCommands(env.projectId).then(setCommands, () => setCommands([]))
+    load()
+    return ide.onCommandsChanged(load)
+  }, [env.projectId])
   const [panelCount, setPanelCount] = useState(0)
   const envRef = useRef(env)
   envRef.current = env
   const apiRef = useRef<DockviewApi | null>(null)
+  // Abrir um arquivo tira o foco da sessão, mas o terminal continua sendo o da última sessão usada.
+  const lastSessionId = useRef('')
+  const onActiveSessionRef = useRef(props.onActiveSession)
+  onActiveSessionRef.current = props.onActiveSession
 
   const setFocus = useCallback((panelId: string | null) => {
     const dock = apiRef.current
@@ -87,26 +104,30 @@ export function EnvironmentView(props: {
     [onChange]
   )
 
-  const createSession = useCallback(
-    async (adapterId: string, useWorktree: boolean) => {
+  const placeNewSession = useCallback(
+    async (request: Omit<CreateSessionRequest, 'environmentId'>, takeFocus: boolean) => {
       const dock = apiRef.current
       if (!dock) return
-      try {
-        const { session, missingInWorktree } = await ide.createSession({ environmentId: envRef.current.id, adapterId, worktree: useWorktree })
-        const current = envRef.current
-        onChange({ ...current, sessions: [...current.sessions, session] })
-        if (dock.hasMaximizedGroup()) setFocus(null)
-        addTerminalPanel(dock, session)
-        if (missingInWorktree.length > 0) {
-          toast(`Não copiados para a worktree: ${missingInWorktree.join(', ')}`)
-        }
-      } catch (err) {
-        toast(errorMessage(err))
+      const { session, missingInWorktree } = await ide.createSession({ ...request, environmentId: envRef.current.id })
+      const current = envRef.current
+      onChange({ ...current, sessions: [...current.sessions, session] })
+      if (dock.hasMaximizedGroup()) setFocus(null)
+      addTerminalPanel(dock, session)
+      if (takeFocus) focusTerminal(session.id)
+      if (missingInWorktree.length > 0) {
+        toast(`Não copiados para a worktree: ${missingInWorktree.join(', ')}`)
       }
     },
     [addTerminalPanel, onChange, setFocus, toast]
   )
 
+  const createSession = useCallback(
+    (adapterId: string, terminalOfSessionId?: string) =>
+      placeNewSession({ adapterId, terminalOfSessionId }, terminalOfSessionId !== undefined).catch((err) => toast(errorMessage(err))),
+    [placeNewSession, toast]
+  )
+
+  const claudeAvailable = adapters.some((a) => a.id === 'claude' && a.available)
   const defaultAdapter = adapters.find((a) => a.available)?.id ?? 'shell'
   const defaultAdapterRef = useRef(defaultAdapter)
   defaultAdapterRef.current = defaultAdapter
@@ -147,6 +168,19 @@ export function EnvironmentView(props: {
     })
   }, [setFocus])
 
+  /** Um painel de plugins por ambiente: se já existe, só traz para a frente. */
+  const openPlugins = useCallback(() => {
+    const dock = apiRef.current
+    if (!dock) return
+    if (dock.hasMaximizedGroup()) setFocus(null)
+    const existing = dock.getPanel('plugins')
+    if (existing) {
+      existing.api.setActive()
+      return
+    }
+    dock.addPanel<PluginsPanelParams>({ id: 'plugins', component: 'plugins', title: 'Plugins', params: { kind: 'plugins' }, position: placeInGrid(dock) })
+  }, [setFocus])
+
   const closePanel = useCallback(
     (panelId: string) => {
       const dock = apiRef.current
@@ -154,8 +188,6 @@ export function EnvironmentView(props: {
       if (!dock || !panel) return
       const params = paramsOf(panel)
       if (params.kind === 'terminal') {
-        const running = props.states.get(params.sessionId)?.running
-        if (running && !window.confirm('Encerrar esta sessão?')) return
         void ide.removeSession(envRef.current.id, params.sessionId)
         disposeTerminal(params.sessionId)
         const current = envRef.current
@@ -167,7 +199,7 @@ export function EnvironmentView(props: {
       if (focusId === panelId) setFocus(null)
       panel.api.close()
     },
-    [focusId, onChange, props.states, setFocus]
+    [focusId, onChange, setFocus]
   )
 
   const context = useMemo<EnvContextValue>(
@@ -195,12 +227,20 @@ export function EnvironmentView(props: {
           (err) => toast(errorMessage(err))
         )
       },
+      acknowledgeSession: (sessionId) => {
+        void ide.acknowledgeSession(envRef.current.id, sessionId)
+        updateSession(sessionId, { interrupted: false })
+      },
       setDirty: (panelId, value) => {
         if (value) unsavedPanels.add(panelId)
         else unsavedPanels.delete(panelId)
-      }
+      },
+      commands,
+      claudeSessions: props.claudeSessions,
+      pluginsChangedAt: props.pluginsChangedAt,
+      markPluginsChanged: props.onPluginsChanged
     }),
-    [closePanel, env, focusId, openFile, props.states, props.theme, setFocus, toast, updateSession]
+    [closePanel, commands, env, focusId, openFile, props.states, props.theme, props.claudeSessions, props.pluginsChangedAt, props.onPluginsChanged, setFocus, toast, updateSession]
   )
 
   const onReady = (event: DockviewReadyEvent): void => {
@@ -218,6 +258,15 @@ export function EnvironmentView(props: {
       }
     }
     for (const session of current.sessions) addTerminalPanel(dock, session)
+    if (dock.hasMaximizedGroup()) setFocusId(dock.activePanel?.id ?? null)
+    const rememberSession = (): void => {
+      const params = dock.activePanel && paramsOf(dock.activePanel)
+      if (params?.kind !== 'terminal') return
+      lastSessionId.current = params.sessionId
+      onActiveSessionRef.current(params.sessionId)
+    }
+    rememberSession()
+    dock.onDidActivePanelChange(rememberSession)
     dock.onDidLayoutChange(() => {
       setPanelCount(dock.panels.length)
       ide.saveLayout(env.id, dock.toJSON())
@@ -225,11 +274,12 @@ export function EnvironmentView(props: {
     setPanelCount(dock.panels.length)
     dock.onDidMaximizedGroupChange(() => {
       if (!dock.hasMaximizedGroup()) setFocusId(null)
+      ide.saveLayout(env.id, dock.toJSON())
     })
 
     // Primeira abertura de um ambiente novo: monta o que o modelo promete.
     if (!current.layout && current.sessions.length === 0 && (current.template !== 'blank' || current.draft)) {
-      void createSession(defaultAdapterRef.current, false).then(() => {
+      void createSession(defaultAdapterRef.current).then(() => {
         if (current.template !== 'think') return
         dock.addPanel<FilePanelParams>({
           id: `file:${crypto.randomUUID()}`,
@@ -249,34 +299,27 @@ export function EnvironmentView(props: {
       <nav className="rail" aria-label="Ferramentas">
         <IconButton icon="grid" label="Visão geral" className={focusId ? '' : 'on'} onClick={() => setFocus(null)} />
         <IconButton icon="folder" label="Arquivos" className={filesOpen ? 'on' : ''} onClick={() => setFilesOpen(!filesOpen)} />
-        <IconButton icon="terminal" label="Nova sessão" onClick={() => void createSession(defaultAdapter, false)} />
-        <IconButton icon="options" label="Nova sessão com opções" className={optionsOpen ? 'on' : ''} onClick={() => setOptionsOpen(!optionsOpen)} />
+        <IconButton icon="plus" label="Nova sessão" onClick={() => void createSession(defaultAdapter)} />
+        <IconButton icon="terminal" label="Abrir terminal na pasta da sessão atual" onClick={() => void createSession('shell', lastSessionId.current)} />
+        <IconButton
+          icon="worktree"
+          label={claudeAvailable ? 'Nova sessão do Claude Code em worktree' : 'Claude Code não encontrado no PATH'}
+          disabled={!claudeAvailable}
+          onClick={() => setWorktreeOpen(true)}
+        />
+        <IconButton icon="plugins" label="Plugins" onClick={openPlugins} />
         <IconButton icon="openFolder" label="Abrir pasta do projeto" onClick={() => void ide.openProjectFolder(env.projectId)} />
         <div className="rail-space" />
+        <IconButton icon="settings" label="Configurações" onClick={props.openSettings} />
         <IconButton icon={props.theme === 'light' ? 'moon' : 'sun'} label={props.theme === 'light' ? 'Tema escuro' : 'Tema claro'} onClick={props.toggleTheme} />
       </nav>
 
-      {optionsOpen && (
-        <div className="popover" role="dialog" aria-label="Nova sessão">
-          <label>
-            <input type="checkbox" checked={worktree} onChange={(e) => setWorktree(e.target.checked)} /> Em uma worktree
-          </label>
-          {adapters.map((a) => (
-            <button
-              key={a.id}
-              type="button"
-              className="ghost"
-              disabled={!a.available}
-              data-tip={a.available ? undefined : 'Não encontrado no PATH'}
-              onClick={() => {
-                setOptionsOpen(false)
-                void createSession(a.id, worktree)
-              }}
-            >
-              {a.label}
-            </button>
-          ))}
-        </div>
+      {worktreeOpen && (
+        <WorktreeDialog
+          folderName={baseName(env.cwd)}
+          onCreate={(name) => placeNewSession({ adapterId: 'claude', worktree: { name } }, true)}
+          onClose={() => setWorktreeOpen(false)}
+        />
       )}
 
       {filesOpen && <FileDrawer cwd={env.cwd} onOpen={openFile} />}
@@ -297,6 +340,7 @@ export function EnvironmentView(props: {
                     className={`strip ${state?.running ? (state.busy ? 'busy' : 'idle') : 'stopped'} ${on ? 'on' : ''}`}
                     onClick={() => setFocus(termPanelId(s.id))}
                   >
+                    {s.interrupted && <span className="attention-mark" aria-label="Pede atenção" data-tip={INTERRUPTED_TIP}>!</span>}
                     {s.title}
                   </button>
                 )
@@ -313,7 +357,7 @@ export function EnvironmentView(props: {
             />
             {empty && (
               <div className="dock-empty">
-                <button type="button" className="primary" onClick={() => void createSession(defaultAdapter, false)}>
+                <button type="button" className="primary" onClick={() => void createSession(defaultAdapter)}>
                   Nova sessão
                 </button>
               </div>

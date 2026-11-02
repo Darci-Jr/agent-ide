@@ -11,6 +11,15 @@ const slug = (name: string): string =>
     .replace(/^-|-$/g, '')
     .toLowerCase() || 'ambiente'
 
+/** O processo vai embora no meio do trabalho: a sessão passa a pedir atenção. */
+export function markInterrupted(env: Environment): void {
+  for (const session of env.sessions) {
+    if (!session.working) continue
+    session.working = false
+    session.interrupted = true
+  }
+}
+
 /**
  * Cada ambiente é um arquivo: em Ambientes quando salvo, em Temporarios enquanto
  * for rascunho. Assim dá para vê-los, copiá-los e fazer backup pela pasta de trabalho.
@@ -31,6 +40,8 @@ export class EnvironmentStore {
           const env = JSON.parse(text) as Environment
           this.environments.push(env)
           this.written.set(env.id, { path, text: JSON.stringify(env, null, 2) })
+          // Ao carregar, nenhum processo sobrevive: quem trabalhava foi interrompido.
+          markInterrupted(env)
         } catch {
           // Um arquivo danificado não impede o uso dos demais.
           console.error(`Ambiente ignorado: ${path}`)

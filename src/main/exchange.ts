@@ -3,7 +3,7 @@ import { isAbsolute } from 'node:path'
 import type { Environment, TemplateId } from '../shared/types'
 
 const FORMAT_VERSION = 1
-const PANEL_COMPONENTS = new Set(['terminal', 'editor', 'markdown'])
+const PANEL_COMPONENTS = new Set(['terminal', 'editor', 'markdown', 'plugins'])
 const TEMPLATES = new Set<TemplateId>(['multi', 'think', 'blank'])
 
 interface ExportedSession {

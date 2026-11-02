@@ -3,13 +3,17 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, renameSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import type { CreateEnvironmentRequest, CreateSessionRequest, Environment, HistoryEntry } from '../shared/types'
+import type { CreateEnvironmentRequest, CreateSessionRequest, Environment, HistoryEntry, OpenTabs, Preferences, SessionState, CommandDraft } from '../shared/types'
 import { adapterIds, listAdapters } from './adapters'
+import { setClaudeSettings } from './adapters/claude'
+import { CommandStore } from './commands'
+import { listPlugins, setPluginEnabled } from './plugins'
+import { UsageTracker } from './usage'
 import { exportEnvironment, importEnvironment } from './exchange'
 import { denyRead, getProtection, listConfigFiles, listTree, readProjectFile, writeProjectFile } from './files'
 import { listHistory } from './history'
 import { SessionManager } from './sessions'
-import { EnvironmentStore } from './store'
+import { EnvironmentStore, markInterrupted } from './store'
 import { Workspace } from './workspace'
 import { createWorktree } from './worktree'
 
@@ -23,6 +27,8 @@ let win: BrowserWindow | null = null
 let manager: SessionManager
 let store: EnvironmentStore | null = null
 let workspace: Workspace
+let usage: UsageTracker
+let commands: CommandStore
 
 const send = (channel: string, ...args: unknown[]): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
@@ -65,6 +71,27 @@ function migrateOldEnvironments(): void {
   } catch (err) {
     console.error('Falha ao migrar ambientes antigos:', err)
   }
+}
+
+/**
+ * Grava o estado a cada mudança, para valer também em uma queda. Sessões sem estado ficam como
+ * estão: ao fechar a aba o processo some, mas a sessão continua marcada para voltar.
+ */
+function recordSessionStates(states: SessionState[]): void {
+  if (!store) return
+  const byId = new Map(states.map((s) => [s.id, s]))
+  let changed = false
+  for (const env of store.all()) {
+    for (const session of env.sessions) {
+      const state = byId.get(session.id)
+      if (!state) continue
+      if (Boolean(session.shouldRun) === state.running && Boolean(session.working) === state.working) continue
+      session.shouldRun = state.running
+      session.working = state.working
+      changed = true
+    }
+  }
+  if (changed) store.saveSoon()
 }
 
 function uniqueName(base: string): string {
@@ -145,6 +172,15 @@ function registerIpc(): void {
     workspace.touch(env.projectId)
     requireStore().saveSoon()
   })
+  ipcMain.handle('env:resume', async (_e, id: string) => {
+    const env = requireStore().get(id)
+    const toResume = env.sessions.filter((s) => s.shouldRun)
+    // Uma sessão que não abre, como a de uma pasta apagada, fica parada com o botão Retomar.
+    await Promise.all(toResume.map((s) => manager.start(s).catch((err) => console.error(`Sessão não retomada: ${s.id}`, err))))
+    return env
+  })
+  ipcMain.handle('tabs:get', () => workspace.tabs())
+  ipcMain.on('tabs:save', (_e, tabs: OpenTabs) => workspace.saveTabs(tabs))
   ipcMain.handle('env:save', (_e, id: string, name: string) => {
     const env = requireStore().get(id)
     const clean = name.trim()
@@ -155,12 +191,17 @@ function registerIpc(): void {
     return env
   })
   ipcMain.handle('env:close', (_e, id: string) => {
-    for (const s of requireStore().get(id).sessions) manager.remove(s.id)
+    const env = requireStore().get(id)
+    markInterrupted(env)
+    for (const s of env.sessions) manager.remove(s.id)
     requireStore().flush()
   })
   ipcMain.handle('env:delete', (_e, id: string) => {
     // As worktrees continuam no disco: podem ter trabalho ainda não salvo.
-    for (const s of requireStore().get(id).sessions) manager.remove(s.id)
+    for (const s of requireStore().get(id).sessions) {
+      manager.remove(s.id)
+      usage.forget(s.id)
+    }
     requireStore().remove(id)
   })
   ipcMain.on('env:layout', (_e, id: string, layout: unknown) => {
@@ -200,13 +241,14 @@ function registerIpc(): void {
   ipcMain.handle('session:create', async (_e, req: CreateSessionRequest) => {
     const env = requireStore().get(req.environmentId)
     const id = randomUUID()
-    const worktree = req.worktree ? await createWorktree(env.cwd, id) : null
+    const worktree = req.worktree ? await createWorktree(env.cwd, id, req.worktree.name) : null
     const number = env.sessions.length + 1
+    const origin = env.sessions.find((s) => s.id === req.terminalOfSessionId)
     const session = {
       id,
       adapterId: req.adapterId,
-      title: `Sessão ${number}`,
-      cwd: worktree?.path ?? env.cwd,
+      title: worktree?.name ?? `${req.adapterId === 'shell' ? 'Terminal' : 'Sessão'} ${number}`,
+      cwd: worktree?.path ?? origin?.cwd ?? env.cwd,
       worktreeBranch: worktree?.branch,
       started: true
     }
@@ -225,6 +267,7 @@ function registerIpc(): void {
   ipcMain.handle('session:remove', (_e, envId: string, id: string) => {
     const env = requireStore().get(envId)
     manager.remove(id)
+    usage.forget(id)
     env.sessions = env.sessions.filter((s) => s.id !== id)
     requireStore().flush()
   })
@@ -232,9 +275,36 @@ function registerIpc(): void {
     sessionOf(requireStore().get(envId), id).title = title
     requireStore().flush()
   })
+  ipcMain.handle('session:acknowledge', (_e, envId: string, id: string) => {
+    sessionOf(requireStore().get(envId), id).interrupted = false
+    requireStore().flush()
+  })
   ipcMain.handle('session:states', () => manager.list())
   ipcMain.on('pty:write', (_e, id: string, data: string) => manager.write(id, data))
   ipcMain.on('pty:resize', (_e, id: string, cols: number, rows: number) => manager.resize(id, cols, rows))
+
+  ipcMain.handle('commands:list', (_e, projectId: string) => commands.list(projectId))
+  ipcMain.handle('commands:save', (_e, projectId: string, draft: CommandDraft, id?: string) => {
+    const saved = commands.save(projectId, draft, typeof id === 'string' ? id : undefined)
+    send('commands:changed')
+    return saved
+  })
+  ipcMain.handle('commands:delete', (_e, projectId: string, id: string) => {
+    commands.remove(projectId, id)
+    send('commands:changed')
+  })
+  ipcMain.handle('plugins:list', (_e, cwd: string) => {
+    if (!existsSync(cwd)) throw new Error('A pasta do projeto não existe mais.')
+    return listPlugins(cwd)
+  })
+  ipcMain.handle('plugins:set', (_e, cwd: string, id: string, enabled: boolean) => {
+    if (!existsSync(cwd)) throw new Error('A pasta do projeto não existe mais.')
+    return setPluginEnabled(cwd, id, Boolean(enabled))
+  })
+  ipcMain.handle('usage:get', () => usage.usage())
+  ipcMain.handle('prefs:get', () => usage.preferences())
+  ipcMain.handle('context:get', (_e, id: string) => usage.context(id))
+  ipcMain.handle('prefs:save', (_e, prefs: Preferences) => usage.savePreferences(prefs))
 
   ipcMain.handle('files:tree', (_e, cwd: string) => listTree(cwd))
   ipcMain.handle('files:config', (_e, cwd: string) => listConfigFiles(cwd))
@@ -296,10 +366,22 @@ void app.whenReady().then(() => {
     })
   }
   workspace = new Workspace(join(app.getPath('userData'), 'config.json'))
+  usage = new UsageTracker(
+    app.getPath('userData'),
+    (current) => send('usage:changed', current),
+    (sessionId, context) => send('context:changed', sessionId, context)
+  )
+  setClaudeSettings((sessionId, cwd) => usage.settingsFor(sessionId, cwd))
+  commands = new CommandStore(join(app.getPath('userData'), 'comandos.json'), () =>
+    workspace.dir ? join(workspace.dir, 'comandos.json') : null
+  )
   if (workspace.dir) useWorkspace(workspace.dir)
   manager = new SessionManager({
     data: (id, data) => send('pty:data', id, data),
-    states: (states) => send('session:states', states)
+    states: (states) => {
+      recordSessionStates(states)
+      send('session:states', states)
+    }
   })
   registerIpc()
   createWindow()
@@ -307,6 +389,7 @@ void app.whenReady().then(() => {
 
 app.on('window-all-closed', () => {
   manager?.dispose()
+  usage?.dispose()
   store?.flush()
   app.quit()
 })

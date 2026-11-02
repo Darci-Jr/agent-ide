@@ -12,5 +12,5 @@ export interface AgentAdapter {
   label: string
   /** Comando procurado no PATH. Sem ele, o adaptador está sempre disponível. */
   detectCommand?: string
-  spawn(opts: { sessionId: string; started: boolean }): Promise<SpawnSpec>
+  spawn(opts: { sessionId: string; started: boolean; cwd: string }): Promise<SpawnSpec>
 }

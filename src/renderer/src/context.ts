@@ -1,5 +1,5 @@
 import { createContext, useContext } from 'react'
-import type { Environment, SessionState } from '../../shared/types'
+import type { CustomCommand, Environment, SessionState } from '../../shared/types'
 import type { Theme } from './terminals'
 
 export interface EnvContextValue {
@@ -11,10 +11,19 @@ export interface EnvContextValue {
   closePanel(panelId: string): void
   renameSession(sessionId: string, title: string): void
   startSession(sessionId: string): void
+  acknowledgeSession(sessionId: string): void
+  /** Sessões do Claude rodando em qualquer aba, com o início do processo atual. */
+  claudeSessions: Array<{ id: string; title: string; startedAt: number }>
+  pluginsChangedAt: number
+  /** Comandos gerais e do projeto do ambiente, que viram botões nas abas de terminal. */
+  commands: CustomCommand[]
+  markPluginsChanged(): void
   openFile(path: string, asEditor?: boolean): void
   setDirty(panelId: string, dirty: boolean): void
   toast(message: string): void
 }
+
+export const INTERRUPTED_TIP = 'Estava trabalhando quando foi encerrada. A tarefa parou e precisa da sua atenção.'
 
 /** Editores com alterações não salvas, em todos os ambientes. */
 export const unsavedPanels = new Set<string>()

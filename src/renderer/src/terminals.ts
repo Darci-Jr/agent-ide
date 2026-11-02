@@ -44,6 +44,7 @@ interface Entry {
 }
 
 const entries = new Map<string, Entry>()
+const pendingFocus = new Set<string>()
 let currentTheme: Theme = 'light'
 
 /**
@@ -67,6 +68,15 @@ function entry(sessionId: string): Entry {
   term.onResize(({ cols, rows }) => ide.resize(sessionId, cols, rows))
   // Deixa o navegador tratar colar e copiar, que o xterm recebe como eventos.
   term.attachCustomKeyEventHandler((e) => {
+    // Sozinho, o xterm envia o mesmo Enter e a CLI submete. ESC + CR é o Alt+Enter, que as
+    // CLIs entendem como quebra de linha. Bloqueia também o keypress, que enviaria outro CR.
+    if (e.key === 'Enter' && e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+      if (e.type === 'keydown') {
+        e.preventDefault()
+        ide.write(sessionId, '\x1b\r')
+      }
+      return false
+    }
     if (e.type !== 'keydown' || !e.ctrlKey) return true
     const key = e.key.toLowerCase()
     if (key === 'v') return false
@@ -99,6 +109,11 @@ export function attachTerminal(sessionId: string, container: HTMLElement): void 
   }
   fitIfVisible(e)
   ide.resize(sessionId, e.term.cols, e.term.rows)
+  if (pendingFocus.delete(sessionId)) {
+    e.term.focus()
+    // O dockview ainda ativa o painel novo depois de anexá-lo e pode levar o foco junto.
+    requestAnimationFrame(() => e.term.focus())
+  }
 }
 
 /** Um processo novo nasce com o tamanho padrão e precisa receber o tamanho do painel. */
@@ -109,7 +124,12 @@ export function syncTerminalSize(sessionId: string): void {
   ide.resize(sessionId, e.term.cols, e.term.rows)
 }
 
-export const focusTerminal =(sessionId: string): void => entries.get(sessionId)?.term.focus()
+/** Um terminal recém-criado ainda não está na tela: recebe o foco quando for anexado. */
+export function focusTerminal(sessionId: string): void {
+  const e = entries.get(sessionId)
+  if (e?.opened) e.term.focus()
+  else pendingFocus.add(sessionId)
+}
 
 /** Antes de retomar: a CLI redesenha a conversa, e o texto antigo a duplicaria. */
 export const resetTerminal = (sessionId: string): void => entries.get(sessionId)?.term.reset()

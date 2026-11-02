@@ -4,10 +4,17 @@ import { getAdapter } from './adapters'
 import { childEnv } from './childEnv'
 
 const BUSY_WINDOW_MS = 2000
+/** Ao abrir, a CLI redesenha a tela: essa saída não significa trabalho. */
+const STARTUP_GRACE_MS = 5000
+/** Um Claude parado no prompt também solta saídas isoladas; trabalho é atividade contínua. */
+const SUSTAINED_ACTIVITY_MS = 4000
 
 interface Live {
   pty: IPty
   lastOutput: number
+  startedAt: number
+  /** Início da atividade atual; nulo enquanto ociosa. */
+  busySince: number | null
 }
 
 export interface SessionEvents {
@@ -39,7 +46,7 @@ export class SessionManager {
 
   async start(spec: SessionSpec): Promise<void> {
     if (this.live.has(spec.id)) return
-    const { file, args } = await getAdapter(spec.adapterId).spawn({ sessionId: spec.id, started: spec.started })
+    const { file, args } = await getAdapter(spec.adapterId).spawn({ sessionId: spec.id, started: spec.started, cwd: spec.cwd })
     const pty = spawn(file, args, {
       name: 'xterm-256color',
       cols: 120,
@@ -47,9 +54,9 @@ export class SessionManager {
       cwd: spec.cwd,
       env: childEnv(process.env)
     })
-    const live: Live = { pty, lastOutput: Date.now() }
+    const live: Live = { pty, lastOutput: Date.now(), startedAt: Date.now(), busySince: Date.now() }
     this.live.set(spec.id, live)
-    this.states.set(spec.id, { id: spec.id, running: true, busy: true })
+    this.states.set(spec.id, { id: spec.id, running: true, busy: true, working: false, startedAt: live.startedAt })
     pty.onData((data) => {
       live.lastOutput = Date.now()
       this.events.data(spec.id, data)
@@ -58,7 +65,7 @@ export class SessionManager {
       // Se a sessão já foi removida ou reiniciada, o evento é de um processo antigo.
       if (this.live.get(spec.id) !== live) return
       this.live.delete(spec.id)
-      this.states.set(spec.id, { id: spec.id, running: false, busy: false, exitCode })
+      this.states.set(spec.id, { id: spec.id, running: false, busy: false, working: false, exitCode })
       this.events.states(this.list())
     })
     this.events.states(this.list())
@@ -87,9 +94,15 @@ export class SessionManager {
     let changed = false
     for (const [id, live] of this.live) {
       const state = this.states.get(id)
-      const busy = Date.now() - live.lastOutput < BUSY_WINDOW_MS
-      if (state && state.busy !== busy) {
+      const now = Date.now()
+      const busy = now - live.lastOutput < BUSY_WINDOW_MS
+      if (!busy) live.busySince = null
+      else live.busySince ??= now
+      const working =
+        busy && now - live.startedAt >= STARTUP_GRACE_MS && live.busySince !== null && now - live.busySince >= SUSTAINED_ACTIVITY_MS
+      if (state && (state.busy !== busy || state.working !== working)) {
         state.busy = busy
+        state.working = working
         changed = true
       }
     }
