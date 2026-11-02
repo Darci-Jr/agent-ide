@@ -6,6 +6,7 @@ Cada terminal tem um único elemento DOM, criado uma vez em `terminals.ts`. Pain
 
 - Ambientes abertos continuam montados, ocultos com `display: none`.
 - Terminal oculto mede zero: só ajuste o tamanho se estiver visível (`fitIfVisible`), ou o processo encolhe por engano.
+- Abas restauradas só montam o `EnvironmentView` ao aparecer pela primeira vez, para o dockview não medir zero em uma aba oculta. Os processos já rodam, e a saída fica guardada no terminal.
 - O WebGL não trouxe ganho com 8 terminais a 500 KB/s; o renderizador DOM basta.
 
 ## Layout (dockview)
@@ -33,4 +34,4 @@ Direção de sala de controle aérea: quadro azul-ardósia, com cada sessão com
 - Diferença de estado não depende só da cor: inclua o texto (Ativa, Ociosa, Parada).
 - Botões reais, com `aria-label` nos que só têm ícone.
 
-Limitação conhecida: "Aguarda você" ficou de fora porque a saída do terminal não permite distinguir esse estado com segurança.
+Limitação conhecida: "Aguarda você" ficou de fora porque a saída do terminal não permite distinguir esse estado com segurança. Pelo mesmo motivo, "Atenção" vem de saída contínua por 4 segundos (`sessions.ts`), já que um Claude ocioso solta saídas isoladas: uma sessão parada em um pedido de permissão ao fechar não é marcada.

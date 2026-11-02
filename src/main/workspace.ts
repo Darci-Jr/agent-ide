@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
-import type { Project } from '../shared/types'
+import type { OpenTabs, Project } from '../shared/types'
 
 export const PROJECTS_DIR = 'Projetos'
 export const ENVIRONMENTS_DIR = 'Ambientes'
@@ -72,6 +72,20 @@ export class Workspace {
 
   private save(): void {
     writeJsonAtomic(this.registryPath(), this.list)
+  }
+
+  /** Gravado a cada mudança, para sobreviver também a uma queda do app. */
+  saveTabs(tabs: OpenTabs): void {
+    writeJsonAtomic(join(this.dir!, 'abas.json'), tabs)
+  }
+
+  tabs(): OpenTabs {
+    try {
+      const saved = JSON.parse(readFileSync(join(this.dir!, 'abas.json'), 'utf8')) as Partial<OpenTabs>
+      return { openIds: Array.isArray(saved.openIds) ? saved.openIds : [], activeId: saved.activeId ?? null }
+    } catch {
+      return { openIds: [], activeId: null }
+    }
   }
 
   projects(): Project[] {

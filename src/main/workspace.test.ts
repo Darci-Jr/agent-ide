@@ -3,7 +3,9 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Environment } from '../shared/types'
+import { worktreeSlug } from '../shared/worktreeName'
 import { listHistory } from './history'
+import { exportEnvironment } from './exchange'
 import { EnvironmentStore } from './store'
 import { validateProjectName, Workspace } from './workspace'
 
@@ -24,6 +26,47 @@ const env = (over: Partial<Environment> = {}): Environment => ({
   sessions: [],
   layout: null,
   ...over
+})
+
+describe('nome da worktree', () => {
+  it('vira um nome seguro para branch e pasta', () => {
+    expect(worktreeSlug('Corrigir Login')).toBe('corrigir-login')
+    expect(worktreeSlug('  Ação: ../../fora  ')).toBe('acao-fora')
+    expect(worktreeSlug('con')).toBe('con-worktree')
+    expect(worktreeSlug('???')).toBe('')
+    expect(worktreeSlug('a'.repeat(80))).toHaveLength(50)
+  })
+})
+
+describe('restauração', () => {
+  const session = { id: 's1', adapterId: 'claude', title: 'S', cwd: 'x', started: true, shouldRun: true }
+
+  it('quem trabalhava ao encerrar pede atenção; quem estava ocioso, não', () => {
+    const root = join(dir, 'trabalho')
+    const pointer = join(dir, 'config.json')
+    new Workspace(pointer).choose(root)
+    const store = new EnvironmentStore(root)
+    store.add(env({ sessions: [{ ...session, working: true }, { ...session, id: 's2', working: false }] }))
+    const [working, idle] = new EnvironmentStore(root).all()[0]!.sessions
+    expect(working).toMatchObject({ interrupted: true, working: false, shouldRun: true })
+    expect(idle?.interrupted).toBeUndefined()
+  })
+
+  it('lembra as abas e aguenta um arquivo danificado', () => {
+    const root = join(dir, 'trabalho')
+    const workspace = new Workspace(join(dir, 'config.json'))
+    workspace.choose(root)
+    expect(workspace.tabs()).toEqual({ openIds: [], activeId: null })
+    workspace.saveTabs({ openIds: ['a', 'b'], activeId: 'b' })
+    expect(workspace.tabs()).toEqual({ openIds: ['a', 'b'], activeId: 'b' })
+    writeFileSync(join(root, 'abas.json'), '{quebrado')
+    expect(workspace.tabs()).toEqual({ openIds: [], activeId: null })
+  })
+
+  it('a exportação não leva o estado de execução', () => {
+    const text = exportEnvironment(env({ sessions: [{ ...session, working: true, interrupted: true }] }), null)
+    expect(text).not.toMatch(/shouldRun|working|interrupted/)
+  })
 })
 
 describe('Workspace', () => {

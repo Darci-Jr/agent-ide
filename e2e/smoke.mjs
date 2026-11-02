@@ -28,6 +28,23 @@ git('init', '-q', '-b', 'main')
 git('add', '.')
 git('-c', 'user.name=teste', '-c', 'user.email=teste@example.com', 'commit', '-q', '-m', 'inicio')
 
+// Plugins falsos: o e2e nunca liga ou desliga os plugins de verdade.
+const pluginDir = join(base, 'plugin-revisor')
+mkdirSync(join(pluginDir, '.claude-plugin'), { recursive: true })
+mkdirSync(join(pluginDir, 'skills', 'revisar'), { recursive: true })
+writeFileSync(join(pluginDir, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'revisor', description: 'Revisa mudanças antes do commit' }))
+writeFileSync(join(pluginDir, 'skills', 'revisar', 'SKILL.md'), '---\nname: revisar\ndescription: Revisa o diff atual\n---\n')
+const pluginState = join(base, 'plugins-falsos.json')
+writeFileSync(
+  pluginState,
+  JSON.stringify({
+    plugins: [
+      { id: 'revisor@teste', version: '1.0.0', scope: 'user', enabled: true, installPath: pluginDir },
+      { id: 'desligado@teste', version: '2.0.0', scope: 'user', enabled: false, installPath: join(base, 'nao-existe') }
+    ]
+  })
+)
+
 let failures = 0
 const check = (name, ok, detail = '') => {
   console.log(`${ok ? 'ok   ' : 'FALHA'} ${name}${detail ? ` (${detail})` : ''}`)
@@ -40,7 +57,9 @@ async function launch() {
     AGENT_IDE_USER_DATA: profile,
     AGENT_IDE_TEST_DIRECTORY: project,
     AGENT_IDE_TEST_WORKSPACE: workspaceDir,
-    AGENT_IDE_TEST_EXCHANGE_FILE: exchange
+    AGENT_IDE_TEST_EXCHANGE_FILE: exchange,
+    AGENT_IDE_TEST_PLUGIN_CLI: join(here, 'fake-claude-plugins.cjs'),
+    AGENT_IDE_TEST_PLUGIN_STATE: pluginState
   }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.ELECTRON_RENDERER_URL
@@ -55,8 +74,7 @@ async function launch() {
 const button = (page, label) => page.getByRole('button', { name: label, exact: true })
 const shot = (page, name) => page.screenshot({ path: join(here, `${name}.png`) })
 const newTerminal = async (page) => {
-  await button(page, 'Nova sessão com opções').click()
-  await page.locator('.popover').getByRole('button', { name: 'Terminal', exact: true }).click()
+  await button(page, 'Abrir terminal na pasta da sessão atual').click()
   await sleep(700)
 }
 const typeIn = async (page, index, text) => {
@@ -116,8 +134,13 @@ await page.mouse.click(center.x + center.width / 2, center.y + center.height / 2
 await page.locator('.environment:visible .terminal-panel').first().waitFor({ timeout: 8000 }).catch(() => {})
 check('o botão central cria a sessão', (await page.locator('.environment:visible .terminal-panel').count()) === 1)
 await sleep(600)
+let closeConfirmations = 0
+const countConfirmation = () => closeConfirmations++
+page.on('dialog', countConfirmation)
 await button(page, 'Fechar').first().click()
 await sleep(600)
+page.off('dialog', countConfirmation)
+check('fechar uma sessão em execução não pede confirmação', closeConfirmations === 0)
 check('o botão central volta quando não há painéis', (await page.locator('.dock-empty').count()) === 1)
 
 // Grade
@@ -157,7 +180,7 @@ await shot(page, '2-destaque')
 check('destacar mantém o terminal e o conteúdo', await hostHandle.evaluate((e) => e.isConnected && e.textContent.includes('MARCADOR-SESSAO')))
 await page.locator('.focus-strips .strip').nth(1).click()
 await sleep(400)
-check('faixa troca a sessão destacada', (await page.locator('.focus-strips .strip.on').innerText()).startsWith('Sessão'))
+check('faixa troca a sessão destacada', (await page.locator('.focus-strips .strip.on').innerText()).startsWith('Terminal'))
 await button(page, 'Visão geral').click()
 await sleep(400)
 check('volta à visão geral', (await page.locator('.focus-strips').count()) === 0)
@@ -182,6 +205,13 @@ await page.keyboard.type('echo DEPOIS-DE-ARRASTAR\r')
 await sleep(1200)
 await shot(page, '3-arrastado')
 check('continua aceitando digitação depois de arrastar', await anyHostHas(page, 'DEPOIS-DE-ARRASTAR'))
+
+// Shift+Enter: lê os bytes que chegam ao processo, pela tecla real
+await page.keyboard.type(`node -e "process.stdin.setRawMode(true);process.stdin.once('data',d=>{console.log('BYTES-'+d.toString('hex'));process.exit()})"\r`)
+await sleep(1500)
+await page.keyboard.press('Shift+Enter')
+await sleep(800)
+check('Shift+Enter envia quebra de linha, não Enter', await anyHostHas(page, 'BYTES-1b0d'))
 
 // Arquivos e segredos
 await button(page, 'Arquivos').click()
@@ -225,6 +255,146 @@ await sleep(1800)
 check('atualiza quando o arquivo muda', (await page.locator('.markdown h1').innerText()) === 'Ideia revisada')
 check('remove script embutido no Markdown', !(await page.evaluate(() => window.__xss)) && (await page.locator('.markdown img[onerror]').count()) === 0)
 await shot(page, '5-markdown')
+
+// Uso do Claude no rodapé, e configurações para escondê-lo
+const usageBar = page.locator('.usage-bar')
+check('o rodapé aparece antes de haver dados', (await usageBar.textContent()).includes('5h') && (await usageBar.textContent()).includes('—'))
+const inHours = (h) => Date.now() + h * 3600000
+writeFileSync(join(profile, 'uso-claude.json'), JSON.stringify({ fiveHour: { usedPercentage: 23.4, resetsAt: inHours(2) }, sevenDay: { usedPercentage: 92, resetsAt: inHours(72) }, updatedAt: Date.now() }))
+await page.waitForFunction(() => document.querySelector('.usage-bar')?.textContent.includes('23%'), null, { timeout: 5000 }).catch(() => {})
+const usageText = (await usageBar.textContent()).replace(/\s+/g, ' ')
+check('o rodapé mostra 5h e semana', usageText.includes('5h ▰▱▱▱▱ 23%') && usageText.includes('Semana ▰▰▰▰▰ 92%'), usageText)
+check('uso alto aparece como crítico', (await page.locator('.usage-meter.critical').count()) === 1)
+check('terminal comum não mostra contexto', !usageText.includes('Contexto'))
+
+// Contexto: da sessão do Claude que está em uso
+const claudeSettings = join(profile, 'claude-settings')
+const settingsBefore = existsSync(claudeSettings) ? readdirSync(claudeSettings) : []
+await button(page, 'Nova sessão').click()
+await sleep(1500)
+const claudeId = readdirSync(claudeSettings).find((f) => !settingsBefore.includes(f))?.replace('.json', '')
+check('Claude Code recebe a linha de status da IDE', Boolean(claudeId))
+await page.waitForFunction(() => document.querySelector('.usage-bar')?.textContent.includes('Contexto'), null, { timeout: 5000 }).catch(() => {})
+check('a sessão do Claude mostra o contexto vazio antes da primeira resposta', (await usageBar.textContent()).replace(/\s+/g, ' ').includes('Contexto ▱▱▱▱▱ —'))
+writeFileSync(join(profile, 'contexto', `${claudeId}.json`), JSON.stringify({ usedPercentage: 34, size: 200000, updatedAt: Date.now() }))
+await page.waitForFunction(() => document.querySelector('.usage-bar')?.textContent.includes('34%'), null, { timeout: 5000 }).catch(() => {})
+check('o rodapé mostra o contexto da sessão', (await usageBar.textContent()).replace(/\s+/g, ' ').includes('Contexto ▰▰▱▱▱ 34%'))
+await shot(page, '5b-rodape-uso')
+await page.locator('.environment:visible .terminal-panel').first().click()
+await sleep(300)
+check('trocar para um terminal esconde o contexto', !(await usageBar.textContent()).includes('Contexto'))
+
+await button(page, 'Configurações').click()
+const settingsDialog = page.getByRole('dialog', { name: 'Configurações' })
+const usageOption = settingsDialog.getByRole('checkbox', { name: 'Mostrar uso do Claude no rodapé' })
+const contextOption = settingsDialog.getByRole('checkbox', { name: 'Mostrar janela de contexto no rodapé' })
+await usageOption.uncheck()
+await sleep(200)
+check('cada opção esconde só o seu indicador', !(await usageBar.textContent()).includes('5h'))
+await contextOption.uncheck()
+await sleep(300)
+check('sem nada para mostrar, o rodapé some', (await usageBar.count()) === 0)
+const savedPrefs = JSON.parse(readFileSync(join(profile, 'preferencias.json'), 'utf8'))
+check('as escolhas ficam gravadas', savedPrefs.showUsage === false && savedPrefs.showContext === false)
+await shot(page, '5c-configuracoes')
+await usageOption.check()
+await contextOption.check()
+await settingsDialog.getByRole('button', { name: 'Fechar', exact: true }).click()
+check('religar mostra o rodapé', await usageBar.isVisible())
+await page.locator('.environment:visible .panel-tab', { hasText: 'Sessão' }).last().getByRole('button', { name: 'Fechar', exact: true }).click()
+await sleep(500)
+check('fechar a sessão apaga os arquivos dela', !existsSync(join(claudeSettings, `${claudeId}.json`)) && !existsSync(join(profile, 'contexto', `${claudeId}.json`)))
+
+// Plugins: ativar e desativar, com aviso para as sessões abertas, sem reiniciar nada
+await button(page, 'Nova sessão').click()
+await sleep(1500)
+const pluginSessionCount = await hosts(page).count()
+await button(page, 'Plugins').click()
+const pluginsPanel = page.locator('.environment:visible .plugins-panel')
+await pluginsPanel.locator('.plugin').first().waitFor({ timeout: 15000 })
+check('o painel lista os plugins e quantos estão ativos', (await pluginsPanel.textContent()).includes('1 de 2 ativos'))
+await pluginsPanel.getByRole('button', { name: /revisor/ }).click()
+check('abrir um plugin mostra o que ele traz', (await pluginsPanel.locator('.plugin-details').textContent()).includes('revisar'))
+await pluginsPanel.getByRole('switch', { name: 'Desativar revisor' }).click()
+await pluginsPanel.getByText('0 de 2 ativos').waitFor({ timeout: 15000 })
+const fakeState = JSON.parse(readFileSync(pluginState, 'utf8'))
+check('desativar passa pelo comando do Claude Code', fakeState.plugins.find((p) => p.id === 'revisor@teste').enabled === false)
+check('avisa quais sessões precisam reiniciar', await pluginsPanel.locator('.plugins-notice').filter({ hasText: 'Sessão' }).isVisible())
+check('não reinicia nenhuma sessão sozinho', (await hosts(page).count()) === pluginSessionCount && (await page.locator('.environment:visible .terminal-stopped').count()) === 0)
+await shot(page, '5d-plugins')
+await pluginsPanel.getByRole('switch', { name: 'Ativar desligado' }).click()
+await pluginsPanel.getByText('1 de 2 ativos').waitFor({ timeout: 15000 })
+check('ativar também funciona', JSON.parse(readFileSync(pluginState, 'utf8')).plugins.find((p) => p.id === 'desligado@teste').enabled === true)
+await button(page, 'Dispensar aviso').click()
+check('o aviso pode ser dispensado', (await pluginsPanel.locator('.plugins-notice').count()) === 0)
+await button(page, 'Plugins').click()
+check('abrir de novo não duplica o painel', (await page.locator('.environment:visible .plugins-panel').count()) === 1)
+await page.locator('.environment:visible .panel-tab', { hasText: 'Plugins' }).getByRole('button', { name: 'Fechar', exact: true }).click()
+await page.locator('.environment:visible .panel-tab', { hasText: 'Sessão' }).last().getByRole('button', { name: 'Fechar', exact: true }).click()
+await sleep(500)
+
+// Comandos como botões nas abas de terminal
+const settingsCommands = page.getByRole('dialog', { name: 'Configurações' })
+const newCommand = async (command, { name = '', all = false, icon = 'Ícone Testes' } = {}) => {
+  await settingsCommands.getByRole('button', { name: 'Novo comando', exact: true }).click()
+  await settingsCommands.getByLabel('Comando').fill(command)
+  if (name) await settingsCommands.getByLabel('Nome').fill(name)
+  if (all) await settingsCommands.getByRole('radio', { name: 'Todos os projetos' }).check()
+  await settingsCommands.getByRole('button', { name: icon, exact: true }).click()
+  await settingsCommands.getByRole('button', { name: 'Salvar', exact: true }).click()
+  await settingsCommands.getByRole('button', { name: 'Novo comando', exact: true }).waitFor()
+}
+await button(page, 'Nova sessão').click()
+await sleep(1200)
+await button(page, 'Configurações').click()
+await newCommand('echo CMD-PROJETO', { name: 'Eco' })
+await newCommand('echo CMD-GERAL', { all: true, icon: 'Ícone Executar' })
+await shot(page, '5e-comandos')
+await settingsCommands.getByRole('button', { name: 'Fechar', exact: true }).click()
+const terminalTabs = page.locator('.environment:visible .panel-tab', { hasText: 'Terminal' })
+const projectButtons = page.locator('.environment:visible').getByRole('button', { name: 'Eco: echo CMD-PROJETO', exact: true })
+check('o comando vira botão em cada aba de terminal', (await projectButtons.count()) === (await terminalTabs.count()) && (await projectButtons.count()) > 0)
+check('o comando geral também aparece', (await page.locator('.environment:visible').getByRole('button', { name: 'echo CMD-GERAL', exact: true }).count()) > 0)
+const claudeTab = page.locator('.environment:visible .panel-tab', { hasText: 'Sessão' }).last()
+check('sessões do Claude não recebem os botões', (await claudeTab.locator('.tab-commands').count()) === 0)
+const firstTab = terminalTabs.first()
+const order = await firstTab.evaluate((tab) => {
+  const all = [...tab.querySelectorAll('button')]
+  return [all.findIndex((b) => b.getAttribute('aria-label') === 'Fechar'), all.findIndex((b) => b.getAttribute('aria-label') === 'Eco: echo CMD-PROJETO')]
+})
+check('o X vem antes dos comandos', order[0] >= 0 && order[0] < order[1], JSON.stringify(order))
+await firstTab.getByRole('button', { name: 'Eco: echo CMD-PROJETO', exact: true }).click()
+await sleep(1200)
+check('o clique executa na hora', await hosts(page).evaluateAll((els) => els.some((e) => (e.textContent.match(/CMD-PROJETO/g) ?? []).length >= 2)))
+check('o comando do projeto fica na pasta de trabalho', readFileSync(join(workspaceDir, 'comandos.json'), 'utf8').includes('CMD-PROJETO'))
+check('o comando geral fica no perfil do app', readFileSync(join(profile, 'comandos.json'), 'utf8').includes('CMD-GERAL'))
+await button(page, 'Configurações').click()
+for (const n of [1, 2, 3]) await newCommand(`echo EXTRA-${n}`, { all: true })
+await settingsCommands.getByRole('button', { name: 'Fechar', exact: true }).click()
+await firstTab.getByRole('button', { name: 'Mais comandos', exact: true }).click()
+check('acima de 4, os comandos vão para um menu', (await page.locator('.tab-command-menu [role=menuitem]').count()) === 1)
+check(
+  'o menu aparece por cima, sem ser cortado pela barra de abas',
+  await page.locator('.tab-command-menu [role=menuitem]').first().evaluate((item) => {
+    const box = item.getBoundingClientRect()
+    return document.elementFromPoint(box.left + box.width / 2, box.top + box.height / 2) === item
+  })
+)
+await shot(page, '5f-comandos-na-aba')
+// Gerais vêm antes dos do projeto: o quinto, no menu, é o Eco.
+const ecoRuns = () => hosts(page).evaluateAll((els) => Math.max(...els.map((e) => (e.textContent.match(/CMD-PROJETO/g) ?? []).length)))
+const ecoBefore = await ecoRuns()
+check('o menu mostra o quinto comando', (await page.locator('.tab-command-menu [role=menuitem]').first().textContent()) === 'Eco')
+await page.locator('.tab-command-menu [role=menuitem]').first().click()
+await sleep(800)
+check('o menu também executa', (await ecoRuns()) >= ecoBefore + 2)
+await button(page, 'Configurações').click()
+for (const label of ['Eco', 'echo CMD-GERAL', 'echo EXTRA-1', 'echo EXTRA-2', 'echo EXTRA-3']) await settingsCommands.getByRole('button', { name: `Apagar ${label}`, exact: true }).click()
+await sleep(400)
+check('apagar tira os botões', (await page.locator('.environment:visible .tab-commands').count()) === 0)
+await settingsCommands.getByRole('button', { name: 'Fechar', exact: true }).click()
+await claudeTab.getByRole('button', { name: 'Fechar', exact: true }).click()
+await sleep(400)
 
 // Tema
 await button(page, 'Tema escuro').click()
@@ -283,18 +453,54 @@ check('o Markdown abre ao lado da sessão', (await page.locator('.environment:vi
 await shot(page, '7b-pensar-junto')
 
 // Worktree
-await button(page, 'Nova sessão com opções').click()
-await page.getByRole('checkbox', { name: 'Em uma worktree' }).check()
-await page.locator('.popover').getByRole('button', { name: 'Terminal', exact: true }).click()
+const openWorktreeDialog = async () => {
+  await button(page, 'Nova sessão do Claude Code em worktree').click()
+  await page.getByRole('dialog', { name: 'Nova sessão em worktree' }).waitFor()
+}
+const worktreeDialog = page.getByRole('dialog', { name: 'Nova sessão em worktree' })
+check('não há mais menu de opções', (await button(page, 'Nova sessão com opções').count()) === 0)
+await openWorktreeDialog()
+check('criar exige um nome', await button(page, 'Criar').isDisabled())
+await worktreeDialog.getByRole('textbox').fill('Corrigir Login')
+check('mostra a branch e a pasta que serão criadas', /agent\/corrigir-login[\s\S]*loja\.worktrees\/corrigir-login/.test(await worktreeDialog.textContent()))
+await shot(page, '7b1-worktree')
+await button(page, 'Criar').click()
 await page.locator('.toast', { hasText: '.env' }).waitFor()
 check('avisa que o .env não foi para a worktree', true)
-const branches = git('branch', '--list', 'agent/*')
-check('cria uma branch própria', /agent\//.test(branches), branches.trim())
+check('fecha a janela ao criar', (await worktreeDialog.count()) === 0)
+check('cria uma branch com o nome escolhido', /agent\/corrigir-login/.test(git('branch', '--list', 'agent/*')))
 const worktrees = join(base, 'loja.worktrees')
-const created = existsSync(worktrees) ? readdirSync(worktrees) : []
-check('cria a worktree ao lado do repositório', created.length === 1)
-check('não copia o .env para a worktree', created.length === 1 && !existsSync(join(worktrees, created[0], '.env')))
+check('cria a worktree ao lado do repositório', existsSync(join(worktrees, 'corrigir-login')))
+check('não copia o .env para a worktree', !existsSync(join(worktrees, 'corrigir-login', '.env')))
 check('não altera a branch do repositório principal', git('branch', '--show-current').trim() === 'main')
+check('a sessão usa o nome da worktree', await page.locator('.environment:visible .panel-tab', { hasText: 'corrigir-login' }).isVisible())
+
+await openWorktreeDialog()
+await worktreeDialog.getByRole('textbox').fill('corrigir login')
+await button(page, 'Criar').click()
+await page.locator('.worktree-error').waitFor()
+check('recusa um nome já usado e mantém a janela', (await page.locator('.worktree-error').textContent()).includes('corrigir-login') && (await readdirSync(worktrees).length) === 1)
+await shot(page, '7b1b-worktree-repetida')
+await button(page, 'Nome aleatório').click()
+await worktreeDialog.waitFor({ state: 'detached', timeout: 15000 })
+await sleep(300)
+check('o nome aleatório cria outra worktree', readdirSync(worktrees).length === 2 && !(await worktreeDialog.isVisible()))
+
+// Terminal na pasta da sessão atual: a da worktree, depois a de outra sessão
+const inWorktree = () => hosts(page).evaluateAll((els) => els.filter((e) => e.textContent.includes('PS ') && e.textContent.includes('loja.worktrees')).length)
+const openTerminal = button(page, 'Abrir terminal na pasta da sessão atual')
+const terminalsBefore = await hosts(page).count()
+await openTerminal.click()
+await sleep(1500)
+check('o terminal abre na pasta da sessão atual', (await hosts(page).count()) === terminalsBefore + 1 && (await inWorktree()) === 1, `${await inWorktree()} na worktree`)
+await page.keyboard.type('echo FOCO-NO-TERMINAL\r')
+await sleep(800)
+check('o terminal novo já recebe a digitação', await anyHostHas(page, 'FOCO-NO-TERMINAL'))
+await shot(page, '7b2-terminal-da-sessao')
+await page.locator('.environment:visible .terminal-panel').first().click()
+await openTerminal.click()
+await sleep(1500)
+check('acompanha a sessão clicada', (await hosts(page).count()) === terminalsBefore + 2 && (await inWorktree()) === 1)
 
 // Sessão rápida: só o projeto, sem configurar nada
 const tabsBefore = await page.locator('.tab-list [role=tab]').count()
@@ -333,24 +539,67 @@ await button(page, 'Fechar Revisão').click()
 await sleep(500)
 check('fechar a aba não apaga o ambiente salvo', readdirSync(join(workspaceDir, 'Ambientes')).some((f) => f.startsWith('revisao-')))
 
-// Reinício: tela inicial, nada rodando, tudo disponível
-await sleep(600)
+// Reinício: volta como estava, e o que trabalhava pede atenção
+const tabNames = (p) => p.locator('.tab-list [role=tab]').allTextContents()
+await page.getByRole('tab', { name: 'Sem título' }).click()
+await newTerminal(page)
+const workingIndex = (await page.locator('.environment:visible .terminal-panel').count()) - 1
+await typeIn(page, workingIndex, 'while ($true) { Write-Host TRABALHANDO; Start-Sleep -Milliseconds 300 }\r')
+await sleep(8000)
+const tabsAtClose = await tabNames(page)
 await app.close()
 await sleep(500)
 ;({ app, page } = await launch())
-await page.waitForSelector('.home-actions')
-check('reabre na tela inicial', await button(page, 'Criar sessão').isVisible())
+await page.locator('.tab-list [role=tab]').first().waitFor()
+await page.locator('.environment:visible .panel-tab').first().waitFor()
+await sleep(2500)
 check('não pede a pasta de novo', (await button(page, 'Escolher pasta').count()) === 0)
-check('nenhuma aba começa aberta', (await page.locator('.tab-list [role=tab]').count()) === 0)
+check('as abas voltam na mesma ordem', JSON.stringify(await tabNames(page)) === JSON.stringify(tabsAtClose), (await tabNames(page)).join(', '))
+check('volta na aba que estava ativa', await page.locator('.tab.on', { hasText: 'Sem título' }).isVisible())
+check('as sessões voltam abertas, sem botão de retomar', (await page.locator('.environment:visible .terminal-stopped').count()) === 0)
+check('a sessão retomada não continua o que fazia', !(await anyHostHas(page, 'TRABALHANDO')))
+check('a aba do ambiente mostra que pede atenção', await page.locator('.tab', { hasText: 'Sem título' }).locator('.attention-mark').isVisible())
+check('só o ambiente interrompido pede atenção', (await page.locator('.tab .attention-mark').count()) === 1)
+check('só a sessão interrompida pede atenção', (await page.locator('.tab-attention').count()) === 1, await page.locator('.panel-tab', { has: page.locator('.tab-attention') }).first().textContent())
+await shot(page, '8-restaurado-com-atencao')
+await goHome(page)
+check('a tela inicial avisa da atenção', await page.locator('.home-resume em').isVisible())
+await shot(page, '8a-tela-inicial-retomar')
+await page.getByRole('button', { name: /^Retomar/ }).click()
+await page.locator('.environment:visible .tab-attention').waitFor()
+check('Retomar leva à aba já aberta, sem duplicar', (await tabNames(page)).length === tabsAtClose.length)
+await page.locator('.environment:visible .terminal-panel').nth(workingIndex).click()
+await page.keyboard.type('x')
+await sleep(300)
+check('digitar na sessão tira o aviso', (await page.locator('.tab-attention').count()) === 0 && (await page.locator('.attention-mark').count()) === 0)
+
+// Sessões e ambientes anteriores continuam disponíveis
+await goHome(page)
 await button(page, 'Carregar ambiente').click()
 await shot(page, '8-carregar-ambiente')
 check('o temporário sobrevive ao reinício', await page.locator('.home-row').filter({ hasText: 'Sem título' }).first().isVisible())
-await page.locator('.home-row').filter({ hasText: /^loja/ }).first().locator('button').first().click()
+await page.locator('.home-row').filter({ hasText: /^lojaloja,/ }).first().locator('button').first().click()
 await page.waitForSelector('.environment:visible .panel-tab')
 await sleep(800)
-check('restaura as sessões paradas', (await page.locator('.environment:visible .terminal-panel').count()) === 4)
+check('restaura as sessões do ambiente', (await page.locator('.environment:visible .terminal-panel').count()) === 4)
 check('restaura o layout', (await page.locator('.environment:visible .dv-groupview').count()) >= 3)
+check('as sessões do ambiente também voltam abertas', (await page.locator('.environment:visible .terminal-stopped').count()) === 0)
 await shot(page, '8b-reaberto')
+
+// Queda do app, com uma sessão destacada
+await page.locator('.environment:visible').getByRole('button', { name: 'Destacar', exact: true }).first().click()
+await sleep(800)
+const tabsAtCrash = await tabNames(page)
+// app.process() não é o processo principal no Windows: encerrá-lo deixaria o app aberto.
+const mainPid = await app.evaluate(() => process.pid)
+execFileSync('taskkill', ['/F', '/PID', String(mainPid)], { stdio: 'ignore' })
+await sleep(1500)
+;({ app, page } = await launch())
+await page.locator('.tab-list [role=tab]').first().waitFor()
+await page.locator('.environment:visible .panel-tab').first().waitFor()
+await sleep(1000)
+check('as abas sobrevivem a uma queda', JSON.stringify(await tabNames(page)) === JSON.stringify(tabsAtCrash))
+check('a sessão destacada continua destacada', await page.locator('.focus-strips').isVisible())
 
 // Apagar
 await goHome(page)
@@ -359,8 +608,41 @@ const before = readdirSync(join(workspaceDir, 'Ambientes')).length
 await button(page, 'Apagar Revisão').click()
 await sleep(400)
 check('apagar remove o ambiente', readdirSync(join(workspaceDir, 'Ambientes')).length === before - 1)
+
+// Fechar todas as abas e usar o botão Retomar: volta o último ambiente fechado
+await page.getByRole('button', { name: 'Voltar', exact: true }).click()
+const closeTab = async (name) => {
+  await page.locator('.tab', { has: page.getByRole('tab', { name, exact: true }) }).hover()
+  await button(page, `Fechar ${name}`).click()
+  await sleep(300)
+  if (await page.getByRole('dialog', { name: 'Fechar sessão temporária' }).isVisible()) await button(page, 'Descartar').click()
+  await sleep(500)
+}
+for (const name of await tabNames(page)) if (name !== 'loja') await closeTab(name)
+await page.getByRole('tab', { name: 'loja', exact: true }).click()
+await sleep(300)
+await closeTab('loja')
+await page.waitForSelector('.home-actions')
+check('o botão Retomar oferece o último ambiente', (await page.getByRole('button', { name: /^Retomar/ }).textContent()).startsWith('Retomarloja ·'))
+await shot(page, '8c-sem-abas')
+await page.getByRole('button', { name: /^Retomar/ }).click()
+await page.getByRole('tab', { name: 'loja', exact: true }).waitFor()
+await page.locator('.environment:visible .panel-tab').first().waitFor()
+await sleep(1000)
+check('Retomar reabre o ambiente com o layout', (await page.locator('.environment:visible .dv-groupview').count()) >= 3)
+check('Retomar reabre as sessões', (await page.locator('.environment:visible .terminal-panel').count()) === 4 && (await page.locator('.environment:visible .terminal-stopped').count()) === 0)
+
+// Sem abas abertas, abre na tela inicial, com o que retomar
+await closeTab('loja')
 await app.close()
-rmSync(base, { recursive: true, force: true })
+await sleep(500)
+;({ app, page } = await launch())
+await page.waitForSelector('.home-actions')
+check('sem abas abertas, reabre na tela inicial', (await page.locator('.tab-list [role=tab]').count()) === 0)
+check('a tela inicial oferece Retomar', await page.getByRole('button', { name: /^Retomar/ }).isVisible())
+await app.close()
+// Os processos encerrados demoram a soltar a pasta no Windows.
+rmSync(base, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
 
 console.log(failures ? `\n${failures} falha(s)` : '\nTudo certo')
 process.exit(failures ? 1 : 0)

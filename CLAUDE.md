@@ -56,14 +56,21 @@ Um novo canal de IPC passa por três arquivos: `shared/types.ts`, `preload/index
 - Integração por terminal real, não por Agent SDK.
 - O projeto é o centro: toda sessão parte de um projeto, e o histórico é por projeto.
 - A pasta de trabalho é escolhida uma única vez. Não peça ao usuário para escolher onde salvar.
-- A IDE sempre abre na tela inicial, e nenhuma sessão começa sozinha.
+- A IDE volta como estava: as mesmas abas, o mesmo layout e a mesma aba ativa, inclusive depois de uma queda. Sem abas abertas, abre na tela inicial, que oferece Retomar o último ambiente.
+- Sessões que rodavam são retomadas sozinhas, mas sem continuar a tarefa. Importados e modelos nunca iniciam sozinhos.
+- Sessão que trabalhava quando foi encerrada mostra "Atenção" até a pessoa digitar nela ou dispensar.
 - Fechar uma aba não apaga o ambiente; apagar é uma ação separada.
+- Fechar sessão ou terminal é direto, sem confirmação.
+- A barra lateral tem ações separadas: nova sessão, terminal na pasta da sessão atual e sessão do Claude em worktree. Não há menu de opções. Configurações ficam no pé da barra.
+- O rodapé da IDE mostra só o uso do Claude (5h e semana) e a janela de contexto da sessão do Claude em uso, sem textos explicativos. Cada indicador tem sua opção nas configurações. O rodapé é independente do terminal: as opções não mudam nada nas sessões.
+- O painel de plugins ativa e desativa pelo `claude plugin` oficial. Nunca reinicia sessões: avisa quais precisam reiniciar ou de `/reload-plugins`.
+- Comandos personalizados, por projeto ou para todos, viram botões só nas abas de terminal, nunca nas do Claude. O clique executa na hora. Na aba, o X vem antes deles, e acima de 4 o resto vai para um menu.
 - Temas claro (padrão) e escuro em toda tela nova.
 - Open source, com licença MIT. O repositório ainda é privado.
 
 ## Próximos passos, nesta ordem
 
-1. Contexto e custo por sessão, lendo o transcript `.jsonl`.
+1. Custo por sessão. A linha de status já recebe `cost`, como recebe o contexto.
 2. Aplicações em execução, por sessão.
 3. Adaptadores de outras CLIs e de modelos locais.
 4. Instaladores, e suporte testado a Mac e Linux. Hoje só o Windows é testado.

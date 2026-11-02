@@ -16,6 +16,12 @@ export interface SessionSpec {
   worktreeBranch?: string
   /** O agente já foi iniciado alguma vez; decide entre iniciar e retomar. */
   started: boolean
+  /** O processo estava rodando quando foi visto pela última vez: volta ao reabrir o ambiente. */
+  shouldRun?: boolean
+  /** Estava trabalhando na última gravação. Sobrevive a uma queda do app. */
+  working?: boolean
+  /** A IDE ou a aba foi encerrada no meio de um trabalho, e a pessoa ainda não voltou à sessão. */
+  interrupted?: boolean
 }
 
 export interface SessionState {
@@ -23,7 +29,107 @@ export interface SessionState {
   running: boolean
   /** O terminal produziu saída nos últimos segundos. */
   busy: boolean
+  /** Em atividade, sem contar a saída inicial de um processo recém-aberto. */
+  working: boolean
+  /** Quando o processo atual começou. Uma mudança de plugin depois disso ainda não vale para ele. */
+  startedAt?: number
   exitCode?: number
+}
+
+/** Uma janela de limite da conta do Claude, como a linha de status do Claude Code informa. */
+export interface UsageWindow {
+  usedPercentage: number
+  /** Em milissegundos. */
+  resetsAt: number
+}
+
+/** Limites da conta lidos pela linha de status. Só existe para assinantes, depois da primeira resposta. */
+export interface ClaudeUsage {
+  fiveHour: UsageWindow | null
+  sevenDay: UsageWindow | null
+  updatedAt: number
+}
+
+/** Ícones que um comando pode usar. Os desenhos ficam em `renderer/src/icons.tsx`. */
+export const COMMAND_ICONS = [
+  'play',
+  'flask',
+  'hammer',
+  'bug',
+  'rocket',
+  'broom',
+  'package',
+  'database',
+  'globe',
+  'worktree',
+  'check',
+  'stop',
+  'refresh',
+  'upload',
+  'download',
+  'terminal'
+] as const
+export type CommandIcon = (typeof COMMAND_ICONS)[number]
+
+/** Comando que vira botão nas abas de terminal. */
+export interface CommandDraft {
+  command: string
+  /** Opcional: aparece na dica junto do comando. */
+  name: string
+  icon: CommandIcon
+  /** `project` vale só para o projeto do ambiente; `global`, para todos. */
+  scope: 'project' | 'global'
+}
+
+export interface CustomCommand extends CommandDraft {
+  id: string
+}
+
+export interface PluginItem {
+  name: string
+  description: string
+}
+
+/** Plugin do Claude Code instalado, com o estado que vale para o projeto. */
+export interface PluginInfo {
+  /** `nome@marketplace`. */
+  id: string
+  name: string
+  marketplace: string
+  version: string
+  scope: string
+  enabled: boolean
+  description: string
+  errors: string[]
+  skills: PluginItem[]
+  commands: PluginItem[]
+  agents: PluginItem[]
+  mcpServers: string[]
+  hasHooks: boolean
+}
+
+export interface PluginsPanelParams {
+  kind: 'plugins'
+}
+
+/** Janela de contexto de uma sessão do Claude, como a linha de status informa. */
+export interface SessionContext {
+  usedPercentage: number
+  /** Tamanho da janela em tokens, quando informado. */
+  size: number | null
+  updatedAt: number
+}
+
+/** O que aparece no rodapé da IDE. Não muda nada no terminal. */
+export interface Preferences {
+  showUsage: boolean
+  showContext: boolean
+}
+
+/** O que estava aberto, para a IDE voltar como estava. `activeId` nulo é a tela inicial. */
+export interface OpenTabs {
+  openIds: string[]
+  activeId: string | null
 }
 
 export interface Project {
@@ -108,7 +214,10 @@ export interface ProtectionStatus {
 export interface CreateSessionRequest {
   environmentId: string
   adapterId: string
-  worktree: boolean
+  /** Cria a sessão em uma worktree própria. Nome nulo gera um código aleatório. */
+  worktree?: { name: string | null }
+  /** Abre um terminal avulso na pasta desta sessão; sem ela, na pasta do ambiente. */
+  terminalOfSessionId?: string
 }
 
 export interface CreateSessionResult {
@@ -134,6 +243,10 @@ export interface IdeApi {
   listEnvironments(): Promise<Environment[]>
   createEnvironment(req: CreateEnvironmentRequest): Promise<Environment>
   markEnvironmentOpened(id: string): Promise<void>
+  /** Devolve o ambiente atualizado, com as sessões que estavam rodando já retomadas. */
+  resumeEnvironment(id: string): Promise<Environment>
+  getOpenTabs(): Promise<OpenTabs>
+  saveOpenTabs(tabs: OpenTabs): void
   saveEnvironment(id: string, name: string): Promise<Environment>
   /** Fecha a aba e encerra as sessões; o ambiente continua salvo. */
   closeEnvironment(id: string): Promise<void>
@@ -147,11 +260,27 @@ export interface IdeApi {
   stopSession(sessionId: string): Promise<void>
   removeSession(environmentId: string, sessionId: string): Promise<void>
   renameSession(environmentId: string, sessionId: string, title: string): Promise<void>
+  /** Tira o aviso de atenção da sessão. */
+  acknowledgeSession(environmentId: string, sessionId: string): Promise<void>
   listSessionStates(): Promise<SessionState[]>
   write(sessionId: string, data: string): void
   resize(sessionId: string, cols: number, rows: number): void
   onData(cb: (sessionId: string, data: string) => void): () => void
   onSessionStates(cb: (states: SessionState[]) => void): () => void
+
+  getUsage(): Promise<ClaudeUsage | null>
+  onUsage(cb: (usage: ClaudeUsage | null) => void): () => void
+  getContext(sessionId: string): Promise<SessionContext | null>
+  onContext(cb: (sessionId: string, context: SessionContext | null) => void): () => void
+  /** Gerais e do projeto, nessa ordem. */
+  listCommands(projectId: string): Promise<CustomCommand[]>
+  saveCommand(projectId: string, draft: CommandDraft, id?: string): Promise<CustomCommand>
+  deleteCommand(projectId: string, id: string): Promise<void>
+  onCommandsChanged(cb: () => void): () => void
+  listPlugins(cwd: string): Promise<PluginInfo[]>
+  setPluginEnabled(cwd: string, id: string, enabled: boolean): Promise<void>
+  getPreferences(): Promise<Preferences>
+  savePreferences(prefs: Preferences): Promise<void>
 
   listTree(cwd: string): Promise<TreeEntry[]>
   listConfigFiles(cwd: string): Promise<ConfigFile[]>
