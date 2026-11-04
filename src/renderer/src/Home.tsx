@@ -1,16 +1,10 @@
 import { useCallback, useEffect, useState, type FormEvent, type ReactNode } from 'react'
-import type { Environment, HistoryEntry, Project, TemplateId } from '../../shared/types'
+import type { Environment, HistoryEntry, Project } from '../../shared/types'
 import { IconButton } from './icons'
 import { errorMessage, ide } from './ide'
 
 type Intent = 'session' | 'history' | 'environment' | 'import'
 type Step = { name: 'menu' } | { name: 'environments' } | { name: 'project'; intent: Intent } | { name: 'history'; project: Project } | { name: 'template'; project: Project }
-
-const TEMPLATES: Array<{ id: TemplateId; name: string; description: string }> = [
-  { id: 'multi', name: 'Várias sessões', description: 'Grade de sessões' },
-  { id: 'think', name: 'Pensar junto', description: 'Sessão e Markdown' },
-  { id: 'blank', name: 'Em branco', description: 'Monte do zero' }
-]
 
 const INTENT_TITLE: Record<Intent, string> = {
   session: 'Criar sessão em qual projeto?',
@@ -93,16 +87,20 @@ export function Home(props: {
       open(await ide.openFromHistory(project.id, entry))
     })
 
+  const saved = environments.filter((e) => !e.draft)
+
   const projectChosen = (project: Project, intent: Intent): Promise<void> =>
     guard(async () => {
       if (intent === 'session') {
-        open(await ide.createEnvironment({ projectId: project.id, template: 'multi', draft: true }))
+        open(await ide.createEnvironment({ projectId: project.id, draft: true }))
       } else if (intent === 'history') {
         setHistory(null)
         setStep({ name: 'history', project })
         setHistory(await ide.listHistory(project.id))
       } else if (intent === 'environment') {
-        setStep({ name: 'template', project })
+        // Sem ambiente salvo para copiar, não há o que escolher.
+        if (saved.length > 0) setStep({ name: 'template', project })
+        else open(await ide.createEnvironment({ projectId: project.id }))
       } else {
         const env = await ide.importEnvironment(project.id)
         if (env) open(env)
@@ -110,7 +108,6 @@ export function Home(props: {
     })
 
   const nameOf = (id: string): string => projects.find((p) => p.id === id)?.name ?? 'Projeto removido'
-  const saved = environments.filter((e) => !e.draft)
   const drafts = environments.filter((e) => e.draft)
   const [last, ...others] = [...environments].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
   const recent = others.slice(0, 5)
@@ -271,27 +268,19 @@ export function Home(props: {
         {step.name === 'template' && (
           <>
             {head(`Novo ambiente em ${step.project.name}`, { name: 'project', intent: 'environment' })}
-            <div className="templates">
-              {TEMPLATES.map((t) => (
-                <button
-                  key={t.id}
-                  type="button"
-                  className="template"
-                  onClick={() => void guard(async () => open(await ide.createEnvironment({ projectId: step.project.id, template: t.id })))}
-                >
-                  <strong>{t.name}</strong>
-                  <span>{t.description}</span>
-                </button>
-              ))}
+            <div className="home-buttons">
+              <button type="button" className="primary" onClick={() => void guard(async () => open(await ide.createEnvironment({ projectId: step.project.id })))}>
+                Novo
+              </button>
             </div>
-            {saved.length > 0 && <h2>A partir de um ambiente salvo</h2>}
+            <h2>A partir de um ambiente salvo</h2>
             {saved.map((env) => (
               <div key={env.id} className="home-row">
                 <button
                   type="button"
                   onClick={() =>
                     void guard(async () =>
-                      open(await ide.createEnvironment({ projectId: step.project.id, template: env.template, fromEnvironmentId: env.id }))
+                      open(await ide.createEnvironment({ projectId: step.project.id, fromEnvironmentId: env.id }))
                     )
                   }
                 >

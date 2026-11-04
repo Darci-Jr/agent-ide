@@ -59,8 +59,9 @@ Um novo canal de IPC passa por três arquivos: `shared/types.ts`, `preload/index
 - A IDE volta como estava: as mesmas abas, o mesmo layout e a mesma aba ativa, inclusive depois de uma queda. Sem abas abertas, abre na tela inicial, que oferece Retomar o último ambiente.
 - Sessões que rodavam são retomadas sozinhas, mas sem continuar a tarefa. Importados e modelos nunca iniciam sozinhos.
 - Sessão que trabalhava quando foi encerrada mostra "Atenção" até a pessoa digitar nela ou dispensar.
+- Criar ambiente não tem modelos de exemplo: abre salvo, com uma sessão. A única escolha é copiar o layout de um ambiente salvo, e sem nenhum salvo a tela é pulada.
 - Fechar uma aba não apaga o ambiente; apagar é uma ação separada.
-- Fechar sessão ou terminal é direto, sem confirmação.
+- Fechar sessão ou terminal é direto, sem confirmação. Fechar um ambiente sempre pede confirmação; o temporário pergunta se salva ou descarta.
 - A barra lateral tem ações separadas: nova sessão, terminal na pasta da sessão atual, sessão do Claude em worktree, Git, Plugins e Comandos. Não há menu de opções. Configurações ficam no pé da barra e só tratam do rodapé.
 - O rodapé só mostra estado, nunca tem ações: uso do Claude (5h e semana), contexto da sessão do Claude em uso e, à direita, o Git da sessão em uso. Sem textos explicativos. Cada indicador tem sua opção nas configurações, e nenhuma muda algo nas sessões.
 - Ações de Git ficam no ícone Git da barra lateral e nunca forçam: trocar de branch é recusado com alterações versionadas, pull é só `--ff-only`, push não força e remover worktree pede confirmação e recusa uma em uso.

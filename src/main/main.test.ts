@@ -107,7 +107,6 @@ describe('exportar e importar ambientes', () => {
     draft: false,
     lastOpenedAt: 1,
     cwd: 'C:\\Users\\Fulano\\loja',
-    template: 'multi',
     sessions: [{ id: sid, adapterId: 'claude', title: 'Login', cwd: 'C:\\Users\\Fulano\\loja.worktrees\\abc', worktreeBranch: 'agent/abc', started: true }],
     layout: null
   }

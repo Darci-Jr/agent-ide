@@ -321,19 +321,8 @@ export function EnvironmentView(props: {
       ide.saveLayout(env.id, dock.toJSON())
     })
 
-    // Primeira abertura de um ambiente novo: monta o que o modelo promete.
-    if (!current.layout && current.sessions.length === 0 && (current.template !== 'blank' || current.draft)) {
-      void createSession(defaultAdapterRef.current).then(() => {
-        if (current.template !== 'think') return
-        dock.addPanel<FilePanelParams>({
-          id: `file:${crypto.randomUUID()}`,
-          component: 'markdown',
-          title: 'Markdown',
-          params: { kind: 'markdown', path: null },
-          position: placeInGrid(dock)
-        })
-      })
-    }
+    // Primeira abertura de um ambiente novo: começa com uma sessão.
+    if (!current.layout && current.sessions.length === 0) void createSession(defaultAdapterRef.current)
   }
 
   const empty = api !== null && panelCount === 0

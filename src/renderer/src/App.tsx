@@ -239,8 +239,10 @@ export function App(): ReactNode {
       setModal({ kind: 'close-draft', env })
       return
     }
+    // Ambiente sempre confirma; sessão e terminal fecham direto.
     const running = env.sessions.some((s) => states.get(s.id)?.running)
-    if (running && !window.confirm(`Fechar ${env.name} e encerrar suas sessões?`)) return
+    const question = running ? `Fechar o ambiente ${env.name}? As sessões em execução serão encerradas.` : `Fechar o ambiente ${env.name}?`
+    if (!window.confirm(question)) return
     void closeSaved(env)
   }
 

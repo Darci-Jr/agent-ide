@@ -22,7 +22,6 @@ const env = (over: Partial<Environment> = {}): Environment => ({
   draft: true,
   lastOpenedAt: 1,
   cwd: dir,
-  template: 'multi',
   sessions: [],
   layout: null,
   ...over

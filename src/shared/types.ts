@@ -1,5 +1,3 @@
-export type TemplateId = 'multi' | 'think' | 'blank'
-
 export interface AdapterInfo {
   id: string
   label: string
@@ -225,8 +223,7 @@ export interface HistoryEntry {
 
 export interface CreateEnvironmentRequest {
   projectId: string
-  template: TemplateId
-  /** Usa um ambiente salvo como modelo, no lugar de `template`. */
+  /** Copia o layout de um ambiente salvo, sem as conversas. */
   fromEnvironmentId?: string
   /** Sessão rápida: fica em Temporarios até ser salva. */
   draft?: boolean
@@ -240,7 +237,6 @@ export interface Environment {
   draft: boolean
   lastOpenedAt: number
   cwd: string
-  template: TemplateId
   sessions: SessionSpec[]
   /** Layout serializado pelo dockview; opaco para o processo principal. */
   layout: unknown | null

@@ -51,6 +51,10 @@ const check = (name, ok, detail = '') => {
   if (!ok) failures++
 }
 
+// Confirmações são aceitas; para testar o "Cancelar", ligue dismissNextDialog antes do clique.
+const confirmations = []
+let dismissNextDialog = false
+
 async function launch() {
   const env = {
     ...process.env,
@@ -66,7 +70,13 @@ async function launch() {
   const app = await _electron.launch({ executablePath: electronPath, args: [root], env, cwd: root })
   const page = await app.firstWindow()
   page.on('pageerror', (e) => check(`sem erro na página: ${e.message}`, false))
-  page.on('dialog', (d) => d.accept())
+  page.on('dialog', (d) => {
+    confirmations.push(d.message())
+    if (dismissNextDialog) {
+      dismissNextDialog = false
+      void d.dismiss()
+    } else void d.accept()
+  })
   await page.waitForSelector('.app')
   return { app, page }
 }
@@ -113,24 +123,28 @@ await shot(page, '0-inicio')
 check('passar o mouse mostra a descrição do ícone', (await hoverTip(page, 'Abrir pasta da IDE')) && (await page.locator('.tooltip').innerText()) === 'Abrir pasta da IDE')
 
 // Projeto novo sem escolher lugar
-await button(page, 'Criar ambiente').click()
+await button(page, 'Carregar sessão').click()
 await page.getByLabel('Nome do novo projeto').fill('a/b')
 await button(page, 'Criar projeto').click()
 await page.waitForSelector('.toast')
 check('recusa um nome de projeto inválido', !existsSync(join(workspaceDir, 'Projetos', 'a')))
 await page.getByLabel('Nome do novo projeto').fill('Novo site')
 await button(page, 'Criar projeto').click()
-await page.getByRole('button', { name: /Em branco/ }).waitFor()
+await page.locator('.home-note', { hasText: 'Nenhuma conversa' }).waitFor()
 check('o projeto novo nasce em Projetos, sem perguntar onde', existsSync(join(workspaceDir, 'Projetos', 'Novo site')))
 await button(page, 'Voltar').click()
 await button(page, 'Voltar').click()
 
-// Pasta existente e ambiente em branco
+// Pasta existente e ambiente novo: sem ambiente salvo, abre direto com uma sessão
 await button(page, 'Criar ambiente').click()
 await button(page, 'Adicionar pasta existente').click()
-await page.getByRole('button', { name: /Em branco/ }).click()
-await page.waitForSelector('.dock-empty')
+await page.locator('.environment:visible .terminal-panel').first().waitFor({ timeout: 8000 }).catch(() => {})
+check('criar ambiente não oferece modelos de exemplo', (await page.getByRole('button', { name: /Pensar junto|Várias sessões|Em branco/ }).count()) === 0)
+check('o ambiente novo abre com uma sessão', (await page.locator('.environment:visible .terminal-panel').count()) === 1)
 check('o ambiente usa o nome do projeto', await page.getByRole('tab', { name: 'loja', exact: true }).isVisible())
+await sleep(600)
+await button(page, 'Fechar').first().click()
+await page.waitForSelector('.dock-empty')
 check('os ícones laterais têm descrição', await hoverTip(page, 'Arquivos'))
 await shot(page, '0b-dica')
 
@@ -455,6 +469,7 @@ await button(page, 'Criar ambiente').click()
 await projectRow(page, 'Novo site').click()
 const fromSaved = page.locator('.home-row').filter({ hasText: 'Copia o layout' }).first()
 check('criar ambiente oferece os já salvos como modelo', await fromSaved.isVisible())
+check('e um ambiente novo do zero', await button(page, 'Novo').isVisible())
 await shot(page, '6b-modelos')
 await fromSaved.locator('button').first().click()
 await sleep(1000)
@@ -462,18 +477,15 @@ const copied = page.locator('.environment:visible')
 check('o modelo copia as sessões sem iniciá-las', (await copied.getByRole('button', { name: 'Iniciar' }).count()) >= 3 && !(await anyHostHas(page, 'MARCADOR-SESSAO')))
 check('o modelo não muda o ambiente original', (await page.locator('.tab-list [role=tab]').count()) === 3)
 
-// Pensar junto
+// Ambiente novo, com ambientes salvos
 await goHome(page)
 await button(page, 'Criar ambiente').click()
 await projectRow(page, 'loja').click()
-await page.getByRole('button', { name: /Pensar junto/ }).click()
-await page.waitForSelector('.environment:visible .panel-empty .file')
-await sleep(1200)
-check('pensar junto abre sessão e seletor de Markdown', (await page.locator('.environment:visible .terminal-panel').count()) === 1)
-await page.locator('.environment:visible .panel-empty .file', { hasText: 'ideia.md' }).click()
-await page.waitForSelector('.environment:visible .markdown h1')
-check('o Markdown abre ao lado da sessão', (await page.locator('.environment:visible .dv-groupview').count()) === 2)
-await shot(page, '7b-pensar-junto')
+await button(page, 'Novo').click()
+await page.locator('.environment:visible .terminal-panel').first().waitFor({ timeout: 8000 }).catch(() => {})
+await sleep(600)
+check('novo abre um ambiente só com uma sessão', (await page.locator('.environment:visible .terminal-panel').count()) === 1 && (await page.locator('.environment:visible .dv-groupview').count()) === 1)
+await shot(page, '7b-ambiente-novo')
 
 // Worktree
 const openWorktreeDialog = async () => {
@@ -714,6 +726,11 @@ const closeTab = async (name) => {
 for (const name of await tabNames(page)) if (name !== 'loja') await closeTab(name)
 await page.getByRole('tab', { name: 'loja', exact: true }).click()
 await sleep(300)
+dismissNextDialog = true
+const asked = confirmations.length
+await closeTab('loja')
+check('fechar um ambiente pede confirmação', confirmations.slice(asked).some((m) => m.startsWith('Fechar o ambiente loja?')), confirmations.slice(asked).join(' | '))
+check('cancelar mantém o ambiente aberto', await page.getByRole('tab', { name: 'loja', exact: true }).isVisible())
 await closeTab('loja')
 await page.waitForSelector('.home-actions')
 check('o botão Retomar oferece o último ambiente', (await page.getByRole('button', { name: /^Retomar/ }).textContent()).startsWith('Retomarloja ·'))

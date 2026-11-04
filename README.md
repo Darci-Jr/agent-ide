@@ -15,7 +15,7 @@ Testado apenas no Windows.
 - **Histórico:** as conversas do Claude Code de cada projeto, com a opção de restaurar a última.
 - **Sessão rápida:** só escolha o projeto. Ela fica em um ambiente temporário até você fechar a
   aba, e pode ser salva como ambiente a qualquer momento.
-- **Ambientes:** abas com layout e sessões próprios, criadas a partir de modelos ou de outros
+- **Ambientes:** abas com layout e sessões próprios, criadas do zero ou a partir de outros
   ambientes salvos. Exporte um ambiente para um arquivo e compartilhe com o time.
 - **Sessões em paralelo:** cada uma em um terminal real, com worktree Git opcional. Destaque
   uma e volte para a grade sem reiniciar nada.

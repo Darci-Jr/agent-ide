@@ -134,7 +134,6 @@ function registerIpc(): void {
       draft: true,
       lastOpenedAt: Date.now(),
       cwd: project.path,
-      template: 'blank',
       sessions: [session],
       layout: null
     }
@@ -158,7 +157,6 @@ function registerIpc(): void {
           draft: req.draft ?? false,
           lastOpenedAt: Date.now(),
           cwd: project.path,
-          template: req.template,
           sessions: [],
           layout: null
         }

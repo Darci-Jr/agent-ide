@@ -1,10 +1,9 @@
 import { randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
-import type { Environment, TemplateId } from '../shared/types'
+import type { Environment } from '../shared/types'
 
 const FORMAT_VERSION = 1
 const PANEL_COMPONENTS = new Set(['terminal', 'editor', 'markdown', 'plugins', 'diff'])
-const TEMPLATES = new Set<TemplateId>(['multi', 'think', 'blank'])
 
 interface ExportedSession {
   slot: string
@@ -51,7 +50,7 @@ export function exportEnvironment(env: Environment, layout: unknown): string {
     text = text.split(s.id).join(`slot-${i}`)
   })
   cleanLayout = JSON.parse(text)
-  return JSON.stringify({ format: 'agent-ide-environment', version: FORMAT_VERSION, name: env.name, template: env.template, sessions, layout: cleanLayout }, null, 2)
+  return JSON.stringify({ format: 'agent-ide-environment', version: FORMAT_VERSION, name: env.name, sessions, layout: cleanLayout }, null, 2)
 }
 
 const fail = (reason: string): never => {
@@ -73,7 +72,6 @@ export function importEnvironment(text: string, cwd: string, projectId: string, 
   if (data?.format !== 'agent-ide-environment') fail('formato desconhecido')
   if (data.version !== FORMAT_VERSION) fail(`versão ${data.version} não suportada`)
   if (typeof data.name !== 'string' || !data.name.trim()) fail('falta o nome')
-  if (!TEMPLATES.has(data.template)) fail('modelo desconhecido')
   if (!Array.isArray(data.sessions)) fail('lista de sessões ausente')
 
   let layoutText = JSON.stringify(data.layout ?? null)
@@ -106,7 +104,6 @@ export function importEnvironment(text: string, cwd: string, projectId: string, 
     draft: false,
     lastOpenedAt: Date.now(),
     cwd,
-    template: data.template,
     sessions,
     layout
   }
