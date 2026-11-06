@@ -209,6 +209,44 @@ button:disabled {
   opacity: 1;
 }
 
+/* Alfinete: aparece ao passar o mouse; na aba fixada fica sempre visível. */
+.env-pin {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+}
+
+.env-pin svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tab:hover .env-pin,
+.env-pin:focus-visible,
+.tab.pinned .env-pin {
+  opacity: 1;
+}
+
+.tab.pinned .env-pin {
+  color: var(--accent);
+}
+
+.tab.pinned .env-pin svg {
+  fill: currentColor;
+}
+
+.tab.dragging {
+  opacity: 0.45;
+}
+
+.tab.drop-before {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.tab.drop-after {
+  box-shadow: inset -3px 0 0 var(--accent);
+}
+
 .tabs-space,
 .rail-space {
   flex: 1;
@@ -732,6 +770,28 @@ button:disabled {
   color: var(--text);
   border-left-color: var(--accent);
   background: var(--hover);
+}
+
+/* Expandida: o nome de cada ação ao lado do ícone. Empurra o layout, não fica por cima. */
+.rail.expanded {
+  width: auto;
+  max-width: 280px;
+}
+
+.rail.expanded .icon {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 12px 0 11px;
+}
+
+.icon-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  text-align: left;
 }
 
 .workspace {
@@ -1620,4 +1680,20 @@ button:disabled {
 .git-diff {
   width: 100%;
   margin-bottom: 6px;
+}
+
+.tab-new {
+  flex: none;
+  margin-left: 2px;
+}
+
+.home-tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  background: var(--strip);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
 }

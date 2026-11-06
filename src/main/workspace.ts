@@ -3,7 +3,6 @@ import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSyn
 import { basename, join, resolve } from 'node:path'
 import type { OpenTabs, Project } from '../shared/types'
 
-export const PROJECTS_DIR = 'Projetos'
 export const ENVIRONMENTS_DIR = 'Ambientes'
 export const DRAFTS_DIR = 'Temporarios'
 
@@ -34,16 +33,19 @@ export function validateProjectName(name: string): string {
 }
 
 /**
- * A pasta de trabalho é escolhida uma vez. O app guarda só o caminho dela; todo o
- * resto fica lá dentro, visível e fácil de copiar.
+ * A pasta de trabalho é escolhida uma vez e guarda só os dados da IDE (ambientes, abas,
+ * comandos, lista de projetos). Projetos ficam onde a pessoa escolher, nunca dentro dela.
  */
 export class Workspace {
   private list: Project[] = []
   dir: string | null = null
+  /** Último lugar escolhido para criar um projeto: o seletor abre nele. */
+  lastProjectParent: string | null = null
 
   constructor(private pointerPath: string) {
     try {
-      const saved = JSON.parse(readFileSync(pointerPath, 'utf8')) as { workspaceDir?: string }
+      const saved = JSON.parse(readFileSync(pointerPath, 'utf8')) as { workspaceDir?: string; lastProjectParent?: string }
+      this.lastProjectParent = saved.lastProjectParent ?? null
       // Uma pasta removida faz a escolha ser pedida de novo.
       if (saved.workspaceDir && existsSync(saved.workspaceDir)) this.use(saved.workspaceDir)
     } catch {
@@ -53,11 +55,15 @@ export class Workspace {
 
   choose(dir: string): void {
     this.use(dir)
-    writeJsonAtomic(this.pointerPath, { workspaceDir: dir })
+    this.savePointer()
+  }
+
+  private savePointer(): void {
+    writeJsonAtomic(this.pointerPath, { workspaceDir: this.dir, lastProjectParent: this.lastProjectParent })
   }
 
   private use(dir: string): void {
-    for (const sub of [PROJECTS_DIR, ENVIRONMENTS_DIR, DRAFTS_DIR]) mkdirSync(join(dir, sub), { recursive: true })
+    for (const sub of [ENVIRONMENTS_DIR, DRAFTS_DIR]) mkdirSync(join(dir, sub), { recursive: true })
     this.dir = dir
     try {
       this.list = JSON.parse(readFileSync(this.registryPath(), 'utf8')) as Project[]
@@ -103,11 +109,15 @@ export class Workspace {
     this.save()
   }
 
-  createManaged(name: string): Project {
+  /** Cria `<parent>/<name>`. Quem chama escolhe `parent` com a pessoa. */
+  createProject(parent: string, name: string): Project {
     const clean = validateProjectName(name)
-    const path = join(this.dir!, PROJECTS_DIR, clean)
-    if (existsSync(path)) throw new Error(`Já existe uma pasta chamada ${clean} em Projetos.`)
+    if (!statSync(parent).isDirectory()) throw new Error('Escolha uma pasta.')
+    const path = join(parent, clean)
+    if (existsSync(path)) throw new Error(`Já existe uma pasta chamada ${clean} em ${parent}.`)
     mkdirSync(path)
+    this.lastProjectParent = parent
+    this.savePointer()
     return this.register(path, clean, true)
   }
 

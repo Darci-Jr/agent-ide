@@ -1,10 +1,11 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { readCacheInfo } from './cache'
 import { cleanDraft, CommandStore } from './commands'
-import { parseChanges, parseDiff, parseStatus } from './git'
+import { parseChanges, parseDiff, parseStatus, repositoryRoot } from './git'
 import { readPluginFolder } from './plugins'
 import { STATUS_LINE_SCRIPT, UsageTracker } from './usage'
 
@@ -68,9 +69,9 @@ describe('UsageTracker', () => {
   it('lembra cada opção do rodapé e esquece a sessão removida', () => {
     const t = tracker()
     try {
-      expect(t.preferences()).toEqual({ showUsage: true, showContext: true, showGit: true })
-      t.savePreferences({ showUsage: true, showContext: false, showGit: true })
-      expect(t.preferences()).toEqual({ showUsage: true, showContext: false, showGit: true })
+      expect(t.preferences()).toEqual({ showUsage: true, showContext: true, showCache: true, showGit: true })
+      t.savePreferences({ showUsage: true, showContext: false, showCache: false, showGit: true })
+      expect(t.preferences()).toEqual({ showUsage: true, showContext: false, showCache: false, showGit: true })
       const settings = t.settingsFor('s1', dir)
       t.forget('s1')
       expect(existsSync(settings)).toBe(false)
@@ -135,6 +136,19 @@ describe('comandos', () => {
 })
 
 describe('git', () => {
+  it('acha o repositório que contém uma pasta, para avisar ao escolher a pasta de trabalho', async () => {
+    const outside = join(dir, 'fora')
+    const repo = join(dir, 'repo')
+    mkdirSync(outside)
+    mkdirSync(join(repo, 'dentro'), { recursive: true })
+    execFileSync('git', ['-C', repo, 'init', '-q'])
+    expect(await repositoryRoot(outside)).toBeNull()
+    // O Git responde com barras normais e pode expandir nomes curtos do Windows.
+    const root = await repositoryRoot(join(repo, 'dentro'))
+    expect(root).not.toBeNull()
+    expect(realpathSync.native(root!).toLowerCase()).toBe(realpathSync.native(repo).toLowerCase())
+  })
+
   it('lê branch, distância do remoto e arquivos alterados', () => {
     const text = [
       '# branch.oid 1234567890abcdef',
@@ -172,5 +186,25 @@ describe('git', () => {
     ])
     expect(parseDiff(text, 2)).toMatchObject({ truncated: true })
     expect(parseDiff('diff --git a/i b/i\nBinary files a/i and b/i differ\n')).toEqual({ binary: true, truncated: false, lines: [] })
+  })
+})
+
+describe('cache do prompt', () => {
+  const line = (over: object): string => JSON.stringify({ type: 'assistant', timestamp: '2026-11-05T10:00:00.000Z', message: { usage: { cache_read_input_tokens: 100, cache_creation_input_tokens: 0 } }, ...over })
+  const created = (kind: '1h' | '5m', at: string): string =>
+    line({ timestamp: at, message: { usage: { cache_read_input_tokens: 0, cache_creation_input_tokens: 10, cache_creation: { ephemeral_1h_input_tokens: kind === '1h' ? 10 : 0, ephemeral_5m_input_tokens: kind === '5m' ? 10 : 0 } } } })
+
+  it('vence uma hora depois da última resposta quando o cache é de 1 hora', () => {
+    const text = [created('1h', '2026-11-05T09:00:00.000Z'), line({ timestamp: '2026-11-05T09:30:00.000Z' })].join('\n')
+    expect(readCacheInfo(text)).toEqual({ lastAt: Date.parse('2026-11-05T09:30:00.000Z'), ttlMs: 3600000, expiresAt: Date.parse('2026-11-05T10:30:00.000Z') })
+  })
+
+  it('usa 5 minutos quando é o que a conversa cria, e ignora subagentes e linhas cortadas', () => {
+    const text = ['{"cortada', created('5m', '2026-11-05T09:00:00.000Z'), line({ timestamp: '2026-11-05T09:50:00.000Z', isSidechain: true })].join('\n')
+    expect(readCacheInfo(text)).toMatchObject({ lastAt: Date.parse('2026-11-05T09:00:00.000Z'), ttlMs: 300000 })
+  })
+
+  it('sem respostas, não há cache', () => {
+    expect(readCacheInfo(JSON.stringify({ type: 'user', message: { content: 'oi' } }))).toBeNull()
   })
 })

@@ -190,10 +190,20 @@ export interface SessionContext {
   updatedAt: number
 }
 
+/** Cache do prompt da conversa: cada resposta renova o prazo. */
+export interface CacheInfo {
+  /** Última resposta que leu ou criou cache. */
+  lastAt: number
+  /** 5 minutos ou 1 hora. */
+  ttlMs: number
+  expiresAt: number
+}
+
 /** O que aparece no rodapé da IDE. Não muda nada no terminal. */
 export interface Preferences {
   showUsage: boolean
   showContext: boolean
+  showCache: boolean
   showGit: boolean
 }
 
@@ -240,6 +250,10 @@ export interface Environment {
   sessions: SessionSpec[]
   /** Layout serializado pelo dockview; opaco para o processo principal. */
   layout: unknown | null
+  /** Quando a aba foi fechada pela última vez; ordena o histórico de ambientes. */
+  closedAt?: number
+  /** Fixado: a aba fica no grupo da esquerda, inclusive ao reabrir. Não vai na exportação. */
+  pinned?: boolean
 }
 
 /** Parâmetros dos painéis que não são terminais. O caminho é relativo ao projeto, se possível. */
@@ -307,7 +321,8 @@ export interface IdeApi {
   openProjectFolder(projectId: string): Promise<void>
 
   listProjects(): Promise<Project[]>
-  createProject(name: string): Promise<Project>
+  /** Pergunta onde criar a pasta; nulo se a pessoa cancelar. */
+  createProject(name: string): Promise<Project | null>
   addExistingProject(): Promise<Project | null>
   removeProject(id: string): Promise<void>
   listHistory(projectId: string): Promise<HistoryEntry[]>
@@ -323,6 +338,7 @@ export interface IdeApi {
   saveEnvironment(id: string, name: string): Promise<Environment>
   /** Fecha a aba e encerra as sessões; o ambiente continua salvo. */
   closeEnvironment(id: string): Promise<void>
+  pinEnvironment(id: string, pinned: boolean): Promise<void>
   deleteEnvironment(id: string): Promise<void>
   saveLayout(id: string, layout: unknown): void
   exportEnvironment(id: string, layout: unknown): Promise<boolean>
@@ -344,6 +360,8 @@ export interface IdeApi {
   getUsage(): Promise<ClaudeUsage | null>
   onUsage(cb: (usage: ClaudeUsage | null) => void): () => void
   getContext(sessionId: string): Promise<SessionContext | null>
+  /** Lido do transcript da sessão do Claude; nulo antes da primeira resposta. */
+  getCache(sessionId: string): Promise<CacheInfo | null>
   onContext(cb: (sessionId: string, context: SessionContext | null) => void): () => void
   gitStatus(cwd: string): Promise<GitStatus | null>
   gitBranches(cwd: string): Promise<string[]>

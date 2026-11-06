@@ -50,6 +50,9 @@ export function EnvironmentView(props: {
   onApi(id: string, api: DockviewApi): void
   toast(message: string): void
   toggleTheme(): void
+  /** Barra lateral com o nome de cada ação ao lado do ícone. Vale para todos os ambientes. */
+  railExpanded: boolean
+  toggleRail(): void
   openSettings(): void
   /** A sessão em uso mudou: o rodapé mostra o contexto dela. */
   onActiveSession(sessionId: string): void
@@ -64,7 +67,7 @@ export function EnvironmentView(props: {
   const [worktreeOpen, setWorktreeOpen] = useState(false)
   const [commandsOpen, setCommandsOpen] = useState(false)
   // Altura do ícone Git quando o menu está aberto; nulo com ele fechado.
-  const [gitMenuAt, setGitMenuAt] = useState<number | null>(null)
+  const [gitMenuAt, setGitMenuAt] = useState<{ top: number; left: number } | null>(null)
   const gitButton = useRef<HTMLSpanElement>(null)
   const [commands, setCommands] = useState<CustomCommand[]>([])
   useEffect(() => {
@@ -329,37 +332,47 @@ export function EnvironmentView(props: {
 
   return (
     <div className="environment" style={{ display: props.active ? 'flex' : 'none' }}>
-      <nav className="rail" aria-label="Ferramentas">
-        <IconButton icon="grid" label="Visão geral" className={focusId ? '' : 'on'} onClick={() => setFocus(null)} />
-        <IconButton icon="folder" label="Arquivos" className={filesOpen ? 'on' : ''} onClick={() => setFilesOpen(!filesOpen)} />
-        <IconButton icon="plus" label="Nova sessão" onClick={() => void createSession(defaultAdapter)} />
-        <IconButton icon="terminal" label="Abrir terminal na pasta da sessão atual" onClick={() => void createSession('shell', lastSessionId.current)} />
-        <IconButton
+      <nav className={`rail ${props.railExpanded ? 'expanded' : ''}`} aria-label="Ferramentas">
+        <IconButton withLabel={props.railExpanded} icon="grid" label="Visão geral"
+          className={focusId ? '' : 'on'}
+          onClick={() => {
+            setFocus(null)
+            props.toggleRail()
+          }}
+        />
+        <IconButton withLabel={props.railExpanded} icon="folder" label="Arquivos" className={filesOpen ? 'on' : ''} onClick={() => setFilesOpen(!filesOpen)} />
+        <IconButton withLabel={props.railExpanded} icon="plus" label="Nova sessão" onClick={() => void createSession(defaultAdapter)} />
+        <IconButton withLabel={props.railExpanded} icon="terminal" label="Abrir terminal na pasta da sessão atual" onClick={() => void createSession('shell', lastSessionId.current)} />
+        <IconButton withLabel={props.railExpanded}
           icon="worktree"
           label={claudeAvailable ? 'Nova sessão do Claude Code em worktree' : 'Claude Code não encontrado no PATH'}
           disabled={!claudeAvailable}
           onClick={() => setWorktreeOpen(true)}
         />
         <span ref={gitButton} className="rail-anchor">
-          <IconButton
+          <IconButton withLabel={props.railExpanded}
             icon="git"
             label="Git"
             className={gitMenuAt !== null ? 'on' : ''}
-            onClick={() => setGitMenuAt(gitMenuAt === null ? (gitButton.current?.firstElementChild?.getBoundingClientRect().top ?? 100) : null)}
+            onClick={() => {
+              const box = gitButton.current?.firstElementChild?.getBoundingClientRect()
+              setGitMenuAt(gitMenuAt === null ? { top: box?.top ?? 100, left: (box?.right ?? 44) + 6 } : null)
+            }}
           />
         </span>
-        <IconButton icon="plugins" label="Plugins" onClick={openPlugins} />
-        <IconButton icon="commands" label="Comandos" className={commandsOpen ? 'on' : ''} onClick={() => setCommandsOpen(true)} />
-        <IconButton icon="openFolder" label="Abrir pasta do projeto" onClick={() => void ide.openProjectFolder(env.projectId)} />
+        <IconButton withLabel={props.railExpanded} icon="plugins" label="Plugins" onClick={openPlugins} />
+        <IconButton withLabel={props.railExpanded} icon="commands" label="Comandos" className={commandsOpen ? 'on' : ''} onClick={() => setCommandsOpen(true)} />
+        <IconButton withLabel={props.railExpanded} icon="openFolder" label="Abrir pasta do projeto" onClick={() => void ide.openProjectFolder(env.projectId)} />
         <div className="rail-space" />
-        <IconButton icon="settings" label="Configurações" onClick={props.openSettings} />
-        <IconButton icon={props.theme === 'light' ? 'moon' : 'sun'} label={props.theme === 'light' ? 'Tema escuro' : 'Tema claro'} onClick={props.toggleTheme} />
+        <IconButton withLabel={props.railExpanded} icon="settings" label="Configurações" onClick={props.openSettings} />
+        <IconButton withLabel={props.railExpanded} icon={props.theme === 'light' ? 'moon' : 'sun'} label={props.theme === 'light' ? 'Tema escuro' : 'Tema claro'} onClick={props.toggleTheme} />
       </nav>
 
       {gitMenuAt !== null && (
         <GitMenu
           cwd={env.sessions.find((s) => s.id === lastSessionId.current)?.cwd ?? env.cwd}
-          top={gitMenuAt}
+          top={gitMenuAt.top}
+          left={gitMenuAt.left}
           sessionsInFolder={(root) =>
             env.sessions
               .filter((s) => s.id !== lastSessionId.current && props.states.get(s.id)?.running && samePath(s.cwd, root))

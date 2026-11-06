@@ -25,6 +25,10 @@ export function SettingsDialog(props: { prefs: Preferences; changePrefs(next: Pr
             Mostrar janela de contexto no rodapé
           </label>
           <label className="setting">
+            <input type="checkbox" checked={prefs.showCache} onChange={(e) => changePrefs({ ...prefs, showCache: e.target.checked })} />
+            Mostrar cache da sessão no rodapé
+          </label>
+          <label className="setting">
             <input type="checkbox" checked={prefs.showGit} onChange={(e) => changePrefs({ ...prefs, showGit: e.target.checked })} />
             Mostrar Git no rodapé
           </label>

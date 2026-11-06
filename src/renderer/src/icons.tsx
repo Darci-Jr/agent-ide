@@ -29,6 +29,7 @@ const paths = {
   commands: <path d="M13 2L4 14h7l-1 8 9-12h-7z" />,
   plugins: <path d="M9 4h6v3a2 2 0 1 0 0 0h4v5h-3a2 2 0 1 0 0 4h3v4H5v-4h3a2 2 0 1 0 0-4H5V7h4z" />,
   settings: <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />,
+  pin: <path d="M9 4h6l-1 6 4 4H6l4-4zM12 14v7" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   check: <path d="M5 12l5 5L20 7" />,
   upload: <path d="M12 15V3M7 8l5-5 5 5M4 15v5h16v-5" />,
@@ -53,13 +54,15 @@ export function IconButton(props: {
   onClick?: () => void
   className?: string
   disabled?: boolean
+  /** Mostra o texto ao lado do ícone; aí a dica ao passar o mouse sai, porque repetiria o texto. */
+  withLabel?: boolean
 }): ReactNode {
   return (
     <button
       type="button"
       className={`icon ${props.className ?? ''}`}
       aria-label={props.label}
-      data-tip={props.label}
+      data-tip={props.withLabel ? undefined : props.label}
       disabled={props.disabled}
       // Dentro de uma aba, clicar no botão não pode iniciar um arraste.
       onPointerDown={(e) => e.stopPropagation()}
@@ -72,6 +75,7 @@ export function IconButton(props: {
       <svg viewBox="0 0 24 24" aria-hidden="true">
         {paths[props.icon]}
       </svg>
+      {props.withLabel && <span className="icon-label">{props.label}</span>}
     </button>
   )
 }

@@ -63,8 +63,8 @@ describe('restauração', () => {
   })
 
   it('a exportação não leva o estado de execução', () => {
-    const text = exportEnvironment(env({ sessions: [{ ...session, working: true, interrupted: true }] }), null)
-    expect(text).not.toMatch(/shouldRun|working|interrupted/)
+    const text = exportEnvironment(env({ pinned: true, sessions: [{ ...session, working: true, interrupted: true }] }), null)
+    expect(text).not.toMatch(/shouldRun|working|interrupted|pinned/)
   })
 
   it('o painel de alterações não leva a pasta da máquina', () => {
@@ -82,7 +82,7 @@ describe('Workspace', () => {
     const root = join(dir, 'trabalho')
     mkdirSync(root)
     new Workspace(pointer).choose(root)
-    expect(readdirSync(root).sort()).toEqual(['Ambientes', 'Projetos', 'Temporarios'])
+    expect(readdirSync(root).sort()).toEqual(['Ambientes', 'Temporarios'])
     expect(new Workspace(pointer).dir).toBe(root)
   })
 
@@ -95,13 +95,18 @@ describe('Workspace', () => {
     expect(new Workspace(pointer).dir).toBeNull()
   })
 
-  it('cria um projeto novo dentro de Projetos, sem perguntar onde', () => {
-    const ws = new Workspace(join(dir, 'config.json'))
-    ws.choose(dir)
-    const project = ws.createManaged('Minha loja')
-    expect(project.path).toBe(join(dir, 'Projetos', 'Minha loja'))
+  it('cria o projeto onde a pessoa escolheu, fora da pasta de trabalho, e lembra o lugar', () => {
+    const pointer = join(dir, 'config.json')
+    const ws = new Workspace(pointer)
+    ws.choose(join(dir, 'trabalho'))
+    const parent = join(dir, 'codigo')
+    mkdirSync(parent)
+    const project = ws.createProject(parent, 'Minha loja')
+    expect(project.path).toBe(join(parent, 'Minha loja'))
     expect(existsSync(project.path)).toBe(true)
-    expect(() => ws.createManaged('Minha loja')).toThrow('Já existe')
+    expect(() => ws.createProject(parent, 'Minha loja')).toThrow('Já existe')
+    expect(new Workspace(pointer).lastProjectParent).toBe(parent)
+    expect(new Workspace(pointer).dir).toBe(join(dir, 'trabalho'))
   })
 
   it('recusa nomes que escapariam da pasta ou são inválidos', () => {

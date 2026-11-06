@@ -42,9 +42,14 @@ export function Home(props: {
   showOpenSession(sessionId: string): boolean
   onDeleted(id: string): void
   toast(message: string): void
+  /** Ambientes com aba aberta: no histórico aparecem como abertos. */
+  openIds: string[]
+  /** Abre direto em um passo, como o + da barra de abas, que começa em "Criar ambiente". */
+  start?: Step
 }): ReactNode {
   const { environments, onOpen, onResume, showOpenSession, onDeleted, toast } = props
-  const [step, setStep] = useState<Step>({ name: 'menu' })
+  const [step, setStep] = useState<Step>(props.start ?? { name: 'menu' })
+  const [search, setSearch] = useState('')
   const [projects, setProjects] = useState<Project[]>([])
   const [newName, setNewName] = useState('')
   const [history, setHistory] = useState<HistoryEntry[] | null>(null)
@@ -108,7 +113,6 @@ export function Home(props: {
     })
 
   const nameOf = (id: string): string => projects.find((p) => p.id === id)?.name ?? 'Projeto removido'
-  const drafts = environments.filter((e) => e.draft)
   const [last, ...others] = [...environments].sort((a, b) => b.lastOpenedAt - a.lastOpenedAt)
   const recent = others.slice(0, 5)
   const lastAttention = last?.sessions.filter((s) => s.interrupted).length ?? 0
@@ -119,6 +123,47 @@ export function Home(props: {
       <h1>{title}</h1>
     </div>
   )
+
+  // Histórico: abertos e fechados, do mais recente para o mais antigo. Reabrir retoma as sessões.
+  const fold = (text: string): string => text.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+  const lastSeen = (env: Environment): number => (props.openIds.includes(env.id) ? Date.now() : Math.max(env.closedAt ?? 0, env.lastOpenedAt))
+  const terms = fold(search).split(/\s+/).filter(Boolean)
+  const found = [...environments]
+    .filter((env) => {
+      const haystack = fold([env.name, nameOf(env.projectId), ...env.sessions.map((s) => s.title)].join(' '))
+      return terms.every((t) => haystack.includes(t))
+    })
+    .sort((a, b) => lastSeen(b) - lastSeen(a))
+
+  const historyRow = (env: Environment): ReactNode => {
+    const open = props.openIds.includes(env.id)
+    const count = `${env.sessions.length} ${env.sessions.length === 1 ? 'sessão' : 'sessões'}`
+    return (
+      <div key={env.id} className="home-row">
+        <button type="button" onClick={() => void resume(env)}>
+          <strong>
+            {env.name}
+            {env.draft && <em className="home-tag">temporário</em>}
+            {open && <em className="home-tag">aberto</em>}
+          </strong>
+          <span>
+            {nameOf(env.projectId)} · {count} · {open ? 'aberto agora' : `fechado em ${when(env.closedAt ?? env.lastOpenedAt)}`}
+          </span>
+        </button>
+        <IconButton
+          icon="trash"
+          label={`Apagar ${env.name}`}
+          onClick={() => {
+            if (!window.confirm(`Apagar o ambiente ${env.name}? O projeto e as conversas continuam.`)) return
+            void guard(async () => {
+              await ide.deleteEnvironment(env.id)
+              onDeleted(env.id)
+            })
+          }}
+        />
+      </div>
+    )
+  }
 
   const environmentRow = (env: Environment, removable: boolean): ReactNode => (
     <div key={env.id} className="home-row">
@@ -170,7 +215,7 @@ export function Home(props: {
               <Action icon="session" label="Criar sessão" onClick={() => setStep({ name: 'project', intent: 'session' })} />
               <Action icon="history" label="Carregar sessão" onClick={() => setStep({ name: 'project', intent: 'history' })} />
               <Action icon="environment" label="Criar ambiente" onClick={() => setStep({ name: 'project', intent: 'environment' })} />
-              <Action icon="load" label="Carregar ambiente" onClick={() => setStep({ name: 'environments' })} />
+              <Action icon="load" label="Histórico de ambientes" onClick={() => setStep({ name: 'environments' })} />
             </div>
             {recent.length > 0 && (
               <>
@@ -189,7 +234,9 @@ export function Home(props: {
               onSubmit={(e: FormEvent) => {
                 e.preventDefault()
                 void guard(async () => {
+                  // Cancelar o seletor de pasta mantém o nome digitado.
                   const project = await ide.createProject(newName)
+                  if (!project) return
                   setNewName('')
                   await projectChosen(project, step.intent)
                 })
@@ -294,17 +341,23 @@ export function Home(props: {
 
         {step.name === 'environments' && (
           <>
-            {head('Carregar ambiente', { name: 'menu' })}
-            <div className="home-buttons">
+            {head('Histórico de ambientes', { name: 'menu' })}
+            <div className="home-form">
+              <input
+                type="search"
+                autoFocus
+                aria-label="Buscar ambiente"
+                placeholder="Buscar por ambiente, projeto ou sessão"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+              />
               <button type="button" className="ghost" onClick={() => setStep({ name: 'project', intent: 'import' })}>
                 Importar de um arquivo
               </button>
             </div>
-            {saved.length === 0 && drafts.length === 0 && <p className="home-note">Nenhum ambiente salvo ainda.</p>}
-            {saved.length > 0 && <h2>Salvos</h2>}
-            {saved.map((env) => environmentRow(env, true))}
-            {drafts.length > 0 && <h2>Temporários</h2>}
-            {drafts.map((env) => environmentRow(env, true))}
+            {environments.length === 0 && <p className="home-note">Nenhum ambiente ainda.</p>}
+            {environments.length > 0 && found.length === 0 && <p className="home-note">Nada encontrado para "{search.trim()}".</p>}
+            {found.map((env) => historyRow(env))}
           </>
         )}
       </div>

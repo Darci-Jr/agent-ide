@@ -11,6 +11,8 @@ export function GitMenu(props: {
   cwd: string
   /** Altura do ícone que abriu o menu, para o menu nascer ao lado dele. */
   top: number
+  /** Logo à direita da barra lateral, que pode estar expandida. */
+  left: number
   /** Outras sessões abertas na mesma pasta: trocar de branch também muda para elas. */
   sessionsInFolder(root: string): string[]
   openTerminal(worktreePath: string): void
@@ -93,7 +95,7 @@ export function GitMenu(props: {
       className="git-menu"
       role="dialog"
       aria-label="Git"
-      style={{ top: props.top }}
+      style={{ top: props.top, left: props.left }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') props.onClose()
       }}

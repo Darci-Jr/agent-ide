@@ -9,9 +9,11 @@ Testado apenas no Windows.
 
 ## O que faz
 
-- **Pasta de trabalho:** escolhida uma vez, no primeiro uso. A IDE organiza nela `Projetos`,
-  `Ambientes` e `Temporarios`, e nunca mais pergunta onde salvar.
-- **Projetos:** crie um novo ou adicione uma pasta existente. Toda sessão parte de um projeto.
+- **Pasta de trabalho:** escolhida uma vez, no primeiro uso. Guarda só os dados da IDE:
+  `Ambientes`, `Temporarios`, a lista de projetos e os comandos. Prefira uma pasta fora de
+  repositórios Git; a IDE avisa se não for.
+- **Projetos:** crie um novo, escolhendo onde a pasta dele fica, ou adicione uma pasta existente.
+  Toda sessão parte de um projeto.
 - **Histórico:** as conversas do Claude Code de cada projeto, com a opção de restaurar a última.
 - **Sessão rápida:** só escolha o projeto. Ela fica em um ambiente temporário até você fechar a
   aba, e pode ser salva como ambiente a qualquer momento.

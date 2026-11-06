@@ -1,6 +1,6 @@
 import type { DockviewApi } from 'dockview-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import type { AdapterInfo, ClaudeUsage, CustomCommand, Environment, GitStatus, Preferences, SessionContext, SessionState } from '../../shared/types'
+import type { AdapterInfo, CacheInfo, ClaudeUsage, CustomCommand, Environment, GitStatus, Preferences, SessionContext, SessionState } from '../../shared/types'
 import { SettingsDialog } from './SettingsDialog'
 import { UsageBar } from './UsageBar'
 import { CommandButtons } from './CommandButtons'
@@ -13,6 +13,15 @@ import { disposeTerminal, setTerminalTheme, type Theme } from './terminals'
 import { Tooltip } from './Tooltip'
 
 const THEME_KEY = 'agent-ide-theme'
+const RAIL_KEY = 'agent-ide-rail-expanded'
+
+function initialRail(): boolean {
+  try {
+    return localStorage.getItem(RAIL_KEY) === '1'
+  } catch {
+    return false
+  }
+}
 
 function initialTheme(): Theme {
   try {
@@ -40,8 +49,19 @@ export function App(): ReactNode {
   const [saveName, setSaveName] = useState('')
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [toast, setToast] = useState<string | null>(null)
+  const [railExpanded, setRailExpanded] = useState(initialRail)
+  const toggleRail = useCallback(() => {
+    setRailExpanded((on) => {
+      try {
+        localStorage.setItem(RAIL_KEY, on ? '0' : '1')
+      } catch {
+        // Sem armazenamento, só não é lembrado ao reabrir.
+      }
+      return !on
+    })
+  }, [])
   const [usage, setUsage] = useState<ClaudeUsage | null>(null)
-  const [prefs, setPrefs] = useState<Preferences>({ showUsage: true, showContext: true, showGit: true })
+  const [prefs, setPrefs] = useState<Preferences>({ showUsage: true, showContext: true, showCache: true, showGit: true })
   // Sessão em uso em cada ambiente, e o contexto já lido de cada sessão.
   const [activeSessions, setActiveSessions] = useState<Record<string, string>>({})
   const [contexts, setContexts] = useState<Record<string, SessionContext | null>>({})
@@ -54,6 +74,8 @@ export function App(): ReactNode {
 
   const states = useMemo(() => new Map(stateList.map((s) => [s.id, s])), [stateList])
   const active = environments.find((e) => e.id === activeId) ?? null
+  // Momento do último clique no + das abas: remonta a tela inicial já em "Criar ambiente".
+  const [newEnvironmentAt, setNewEnvironmentAt] = useState(0)
 
   // Comandos do projeto do ambiente ativo: viram botões na aba dele.
   const activeProjectId = active?.projectId ?? null
@@ -70,7 +92,13 @@ export function App(): ReactNode {
       off()
     }
   }, [activeProjectId])
-  const openEnvs = openIds.map((id) => environments.find((e) => e.id === id)).filter((e): e is Environment => Boolean(e))
+  // Fixados sempre à esquerda; dentro de cada grupo vale a ordem das abas abertas.
+  const openEnvs = openIds
+    .map((id) => environments.find((e) => e.id === id))
+    .filter((e): e is Environment => Boolean(e))
+    .sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)))
+  const [dragging, setDragging] = useState<string | null>(null)
+  const [dropHint, setDropHint] = useState<{ id: string; after: boolean } | null>(null)
 
   useEffect(() => {
     void ide.getWorkspace().then(setWorkspace)
@@ -111,6 +139,27 @@ export function App(): ReactNode {
     const id = activeClaude.id
     void ide.getContext(id).then((context) => setContexts((all) => ({ ...all, [id]: context })))
   }, [activeClaude?.id])
+
+  // Cache da sessão do Claude em uso: o transcript muda a cada resposta, então relê de tempos em tempos.
+  const [cache, setCache] = useState<CacheInfo | null>(null)
+  const cacheSessionId = prefs.showCache ? (activeClaude?.id ?? null) : null
+  useEffect(() => {
+    setCache(null)
+    if (!cacheSessionId) return
+    let alive = true
+    const read = (): void => {
+      ide.getCache(cacheSessionId).then(
+        (info) => alive && setCache(info),
+        () => alive && setCache(null)
+      )
+    }
+    read()
+    const timer = setInterval(read, 10000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [cacheSessionId])
 
   // Git da pasta da sessão em uso; sem sessão escolhida, o do projeto do ambiente.
   const gitCwd = activeSession?.cwd ?? active?.cwd ?? null
@@ -209,6 +258,35 @@ export function App(): ReactNode {
     return Boolean(holder)
   }
 
+  /** Ao fixar, a aba vai para o fim dos fixados; ao desafixar, para o começo dos demais. */
+  const togglePin = (env: Environment): void => {
+    const pinned = !env.pinned
+    updateEnv({ ...env, pinned })
+    void ide.pinEnvironment(env.id, pinned).catch((err) => setToast(errorMessage(err)))
+    setOpenIds((ids) => {
+      const rest = ids.filter((id) => id !== env.id)
+      const isPinned = (id: string): boolean => Boolean(environments.find((e) => e.id === id)?.pinned)
+      let at = 0
+      rest.forEach((id, i) => {
+        if (isPinned(id)) at = i + 1
+      })
+      return [...rest.slice(0, at), env.id, ...rest.slice(at)]
+    })
+  }
+
+  /** Arrastar só reordena dentro do mesmo grupo: fixar e desafixar é pelo alfinete. */
+  const sameGroup = (a: string, b: string): boolean =>
+    Boolean(environments.find((e) => e.id === a)?.pinned) === Boolean(environments.find((e) => e.id === b)?.pinned)
+
+  const moveTab = (id: string, target: string, after: boolean): void => {
+    if (id === target || !sameGroup(id, target)) return
+    setOpenIds((ids) => {
+      const rest = ids.filter((i) => i !== id)
+      const at = rest.indexOf(target) + (after ? 1 : 0)
+      return [...rest.slice(0, at), id, ...rest.slice(at)]
+    })
+  }
+
   const removeTab = (env: Environment): void => {
     env.sessions.forEach((s) => disposeTerminal(s.id))
     apis.current.delete(env.id)
@@ -287,7 +365,7 @@ export function App(): ReactNode {
               <h1>Onde a IDE deve guardar suas coisas?</h1>
             </div>
             <p className="home-note">
-              Escolha uma pasta uma única vez. Projetos novos, ambientes e sessões temporárias ficam organizados nela.
+              Escolha uma pasta uma única vez. Ambientes, sessões temporárias e configurações da IDE ficam nela; seus projetos ficam onde você escolher. Prefira uma pasta fora de repositórios.
             </p>
             <button
               type="button"
@@ -320,7 +398,10 @@ export function App(): ReactNode {
           className={`tab-home ${activeId === null ? 'on' : ''}`}
           aria-label="Início"
           data-tip="Início"
-          onClick={() => setActiveId(null)}
+          onClick={() => {
+            setActiveId(null)
+            setNewEnvironmentAt(0)
+          }}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
             <path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z" />
@@ -328,7 +409,35 @@ export function App(): ReactNode {
         </button>
         <div className="tab-list" role="tablist" aria-label="Ambientes abertos">
           {openEnvs.map((env) => (
-            <div key={env.id} className={`tab ${env.id === activeId ? 'on' : ''}`}>
+            <div
+              key={env.id}
+              className={`tab ${env.id === activeId ? 'on' : ''} ${env.pinned ? 'pinned' : ''} ${dragging === env.id ? 'dragging' : ''} ${
+                dropHint?.id === env.id ? (dropHint.after ? 'drop-after' : 'drop-before') : ''
+              }`}
+              draggable
+              onDragStart={(e) => {
+                e.dataTransfer.effectAllowed = 'move'
+                e.dataTransfer.setData('text/plain', env.id)
+                setDragging(env.id)
+              }}
+              onDragOver={(e) => {
+                if (!dragging || dragging === env.id || !sameGroup(dragging, env.id)) return
+                e.preventDefault()
+                const box = e.currentTarget.getBoundingClientRect()
+                const after = e.clientX > box.left + box.width / 2
+                if (dropHint?.id !== env.id || dropHint.after !== after) setDropHint({ id: env.id, after })
+              }}
+              onDrop={(e) => {
+                e.preventDefault()
+                if (dragging && dropHint) moveTab(dragging, dropHint.id, dropHint.after)
+                setDragging(null)
+                setDropHint(null)
+              }}
+              onDragEnd={() => {
+                setDragging(null)
+                setDropHint(null)
+              }}
+            >
               <button
                 type="button"
                 role="tab"
@@ -344,11 +453,21 @@ export function App(): ReactNode {
                   !
                 </span>
               )}
+              <IconButton icon="pin" label={env.pinned ? `Desafixar ${env.name}` : `Fixar ${env.name}`} className="env-pin" onClick={() => togglePin(env)} />
               <IconButton icon="close" label={`Fechar ${env.name}`} className="env-close" onClick={() => requestClose(env)} />
               {env.id === activeId && <CommandButtons commands={commands} onRun={(c) => commandRunners.get(env.id)?.(c)} />}
             </div>
           ))}
         </div>
+        <IconButton
+          icon="plus"
+          label="Novo ambiente"
+          className="tab-new"
+          onClick={() => {
+            setActiveId(null)
+            setNewEnvironmentAt(Date.now())
+          }}
+        />
         <div className="tabs-space" />
         {active?.draft && <IconButton icon="save" label="Salvar como ambiente" onClick={() => startSaving(active, false)} />}
         {active && <IconButton icon="upload" label="Exportar ambiente" onClick={() => setModal({ kind: 'export' })} />}
@@ -358,7 +477,10 @@ export function App(): ReactNode {
       <main className="environments">
         {activeId === null && (
           <Home
+            key={newEnvironmentAt}
+            start={newEnvironmentAt ? { name: 'project', intent: 'environment' } : undefined}
             environments={environments}
+            openIds={openIds}
             onOpen={openEnvironment}
             onResume={resumeEnvironment}
             showOpenSession={showOpenSession}
@@ -378,6 +500,8 @@ export function App(): ReactNode {
             onApi={(id, api) => apis.current.set(id, api)}
             toast={setToast}
             toggleTheme={() => setTheme(theme === 'light' ? 'dark' : 'light')}
+            railExpanded={railExpanded}
+            toggleRail={toggleRail}
             openSettings={() => setModal({ kind: 'settings' })}
             claudeSessions={claudeSessions}
             pluginsChangedAt={pluginsChangedAt}
@@ -387,12 +511,13 @@ export function App(): ReactNode {
         ))}
       </main>
 
-      {(prefs.showUsage || prefs.showContext || prefs.showGit) && (
+      {(prefs.showUsage || prefs.showContext || prefs.showCache || prefs.showGit) && (
         <UsageBar
           usage={usage}
           context={activeClaude ? { title: activeClaude.title, data: contexts[activeClaude.id] ?? null } : null}
           showUsage={prefs.showUsage}
           showContext={prefs.showContext}
+          cache={cacheSessionId ? { data: cache } : null}
           git={prefs.showGit && activeId ? git : null}
         />
       )}

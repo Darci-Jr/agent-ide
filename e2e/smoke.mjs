@@ -17,8 +17,12 @@ const base = mkdtempSync(join(tmpdir(), 'agent-ide-e2e-'))
 const project = join(base, 'loja')
 const profile = join(base, 'perfil')
 const workspaceDir = join(base, 'trabalho')
+// Onde a pessoa escolhe criar projetos novos: fora da pasta de trabalho da IDE.
+const projectsParent = join(base, 'codigo')
+// Transcripts falsos do Claude Code: o e2e nunca escreve no ~/.claude de verdade.
+const transcripts = join(base, 'transcripts')
 const exchange = join(base, 'loja.ambiente.json')
-for (const dir of [join(project, 'docs'), profile, workspaceDir]) mkdirSync(dir, { recursive: true })
+for (const dir of [join(project, 'docs'), profile, workspaceDir, projectsParent]) mkdirSync(dir, { recursive: true })
 writeFileSync(join(project, '.env'), 'API_KEY=valor-de-teste\n')
 writeFileSync(join(project, 'docs', 'ideia.md'), '# Ideia inicial\n\nTexto.\n')
 writeFileSync(join(project, 'package.json'), '{}\n')
@@ -60,6 +64,8 @@ async function launch() {
     ...process.env,
     AGENT_IDE_USER_DATA: profile,
     AGENT_IDE_TEST_DIRECTORY: project,
+    AGENT_IDE_TEST_PROJECT_PARENT: projectsParent,
+    AGENT_IDE_TEST_TRANSCRIPTS: transcripts,
     AGENT_IDE_TEST_WORKSPACE: workspaceDir,
     AGENT_IDE_TEST_EXCHANGE_FILE: exchange,
     AGENT_IDE_TEST_PLUGIN_CLI: join(here, 'fake-claude-plugins.cjs'),
@@ -113,8 +119,8 @@ let { app, page } = await launch()
 check('o primeiro uso pede a pasta de trabalho', await button(page, 'Escolher pasta').isVisible())
 await button(page, 'Escolher pasta').click()
 await page.waitForSelector('.home-actions')
-check('cria a organização da IDE na pasta', ['Ambientes', 'Projetos', 'Temporarios'].every((d) => existsSync(join(workspaceDir, d))))
-for (const label of ['Criar sessão', 'Carregar sessão', 'Criar ambiente', 'Carregar ambiente']) {
+check('cria a organização da IDE na pasta', ['Ambientes', 'Temporarios'].every((d) => existsSync(join(workspaceDir, d))) && !existsSync(join(workspaceDir, 'Projetos')))
+for (const label of ['Criar sessão', 'Carregar sessão', 'Criar ambiente', 'Histórico de ambientes']) {
   check(`a tela inicial oferece: ${label}`, await button(page, label).isVisible())
 }
 await shot(page, '0-inicio')
@@ -122,16 +128,16 @@ await shot(page, '0-inicio')
 // Dica dos ícones
 check('passar o mouse mostra a descrição do ícone', (await hoverTip(page, 'Abrir pasta da IDE')) && (await page.locator('.tooltip').innerText()) === 'Abrir pasta da IDE')
 
-// Projeto novo sem escolher lugar
+// Projeto novo: a pessoa escolhe onde criar
 await button(page, 'Carregar sessão').click()
 await page.getByLabel('Nome do novo projeto').fill('a/b')
 await button(page, 'Criar projeto').click()
 await page.waitForSelector('.toast')
-check('recusa um nome de projeto inválido', !existsSync(join(workspaceDir, 'Projetos', 'a')))
+check('recusa um nome de projeto inválido', !existsSync(join(projectsParent, 'a')))
 await page.getByLabel('Nome do novo projeto').fill('Novo site')
 await button(page, 'Criar projeto').click()
 await page.locator('.home-note', { hasText: 'Nenhuma conversa' }).waitFor()
-check('o projeto novo nasce em Projetos, sem perguntar onde', existsSync(join(workspaceDir, 'Projetos', 'Novo site')))
+check('o projeto novo nasce onde a pessoa escolheu, fora da pasta da IDE', existsSync(join(projectsParent, 'Novo site')) && readdirSync(workspaceDir).every((n) => n !== 'Novo site'))
 await button(page, 'Voltar').click()
 await button(page, 'Voltar').click()
 
@@ -205,6 +211,22 @@ await button(page, 'Visão geral').click()
 await sleep(400)
 check('volta à visão geral', (await page.locator('.focus-strips').count()) === 0)
 check('o terminal sobrevive à volta', await hostHandle.evaluate((e) => e.isConnected && e.textContent.includes('MARCADOR-SESSAO')))
+
+// Barra lateral: Visão geral expande e recolhe, com o nome ao lado de cada ícone
+const rail = page.locator('.environment:visible .rail')
+check('Visão geral expande a barra lateral', (await rail.getAttribute('class')).includes('expanded') && (await box(rail)).width > 150)
+check('expandida, mostra o nome de cada ação', await rail.getByText('Abrir terminal na pasta da sessão atual').isVisible())
+const gridBefore = await box(hosts(page).first())
+await page.mouse.move(0, 0)
+await rail.getByRole('button', { name: 'Arquivos', exact: true }).hover()
+await sleep(500)
+check('expandida, passar o mouse não mostra a dica', (await page.locator('.tooltip').count()) === 0)
+await shot(page, '2b-barra-expandida')
+await button(page, 'Visão geral').click()
+await sleep(400)
+check('outro clique recolhe', !(await rail.getAttribute('class')).includes('expanded') && (await box(rail)).width < 60)
+check('recolhida, a dica volta', await hoverTip(page, 'Arquivos'))
+check('a barra expandida empurra o layout, sem cobrir', (await box(hosts(page).first())).x < gridBefore.x)
 
 // Arrastar
 const tab = page.locator('.environment:visible .panel-tab').first()
@@ -314,14 +336,17 @@ check('cada opção esconde só o seu indicador', !(await usageBar.textContent()
 await contextOption.uncheck()
 const gitOption = settingsDialog.getByRole('checkbox', { name: 'Mostrar Git no rodapé' })
 await gitOption.uncheck()
+const cacheOption = settingsDialog.getByRole('checkbox', { name: 'Mostrar cache da sessão no rodapé' })
+await cacheOption.uncheck()
 await sleep(300)
 check('sem nada para mostrar, o rodapé some', (await usageBar.count()) === 0)
 const savedPrefs = JSON.parse(readFileSync(join(profile, 'preferencias.json'), 'utf8'))
-check('as escolhas ficam gravadas', savedPrefs.showUsage === false && savedPrefs.showContext === false && savedPrefs.showGit === false)
+check('as escolhas ficam gravadas', savedPrefs.showUsage === false && savedPrefs.showContext === false && savedPrefs.showGit === false && savedPrefs.showCache === false)
 await shot(page, '5c-configuracoes')
 await usageOption.check()
 await contextOption.check()
 await gitOption.check()
+await cacheOption.check()
 await settingsDialog.getByRole('button', { name: 'Fechar', exact: true }).click()
 check('religar mostra o rodapé', await usageBar.isVisible())
 await page.locator('.environment:visible .panel-tab', { hasText: 'Sessão' }).last().getByRole('button', { name: 'Fechar', exact: true }).click()
@@ -430,6 +455,24 @@ while ((await commandTerminals.count()) > 0) {
   await commandTerminals.first().getByRole('button', { name: 'Fechar', exact: true }).click()
   await sleep(200)
 }
+
+// Cache: lido do transcript da sessão do Claude em uso (aqui, numa pasta de teste)
+const claudeTitle = (await claudeTab.locator('.tab-title').textContent()).trim()
+const claudeSpec = readdirSync(join(workspaceDir, 'Ambientes'))
+  .flatMap((f) => JSON.parse(readFileSync(join(workspaceDir, 'Ambientes', f), 'utf8')).sessions)
+  .find((s) => s.adapterId === 'claude' && s.title === claudeTitle)
+await claudeTab.locator('.tab-title').click()
+const footerNow = async () => ((await page.locator('.usage-bar').textContent()) ?? '').replace(/\s+/g, ' ')
+check('sem resposta ainda, o cache aparece vazio', await page.waitForFunction(() => document.querySelector('.usage-bar')?.textContent.includes('Cache —'), null, { timeout: 8000 }).then(() => true, () => false), await footerNow())
+const transcriptDir = join(transcripts, claudeSpec.cwd.replace(/[^a-zA-Z0-9]/g, '-'))
+mkdirSync(transcriptDir, { recursive: true })
+const answeredAt = new Date(Date.now() - 10 * 60 * 1000).toISOString()
+writeFileSync(
+  join(transcriptDir, `${claudeSpec.id}.jsonl`),
+  JSON.stringify({ type: 'assistant', timestamp: answeredAt, message: { usage: { cache_read_input_tokens: 0, cache_creation_input_tokens: 10, cache_creation: { ephemeral_1h_input_tokens: 10, ephemeral_5m_input_tokens: 0 } } } }) + '\n'
+)
+check('mostra quanto falta para o cache vencer', await page.waitForFunction(() => /Cache (49|50)min/.test(document.querySelector('.usage-bar')?.textContent ?? ''), null, { timeout: 15000 }).then(() => true, () => false), await footerNow())
+await shot(page, '5g-cache')
 await claudeTab.getByRole('button', { name: 'Fechar', exact: true }).click()
 await sleep(400)
 
@@ -453,7 +496,7 @@ check('exporta sem o conteúdo do segredo', !exported.includes('MUDOU_NO_DISCO')
 
 // Importar para um projeto
 await goHome(page)
-await button(page, 'Carregar ambiente').click()
+await button(page, 'Histórico de ambientes').click()
 await button(page, 'Importar de um arquivo').click()
 await projectRow(page, 'loja').click()
 await sleep(1000)
@@ -680,10 +723,10 @@ check('digitar na sessão tira o aviso', (await page.locator('.tab-attention').c
 
 // Sessões e ambientes anteriores continuam disponíveis
 await goHome(page)
-await button(page, 'Carregar ambiente').click()
+await button(page, 'Histórico de ambientes').click()
 await shot(page, '8-carregar-ambiente')
 check('o temporário sobrevive ao reinício', await page.locator('.home-row').filter({ hasText: 'Sem título' }).first().isVisible())
-await page.locator('.home-row').filter({ hasText: /^lojaloja,/ }).first().locator('button').first().click()
+await page.locator('.home-row').filter({ hasText: /^loja(aberto)?loja ·/ }).first().locator('button').first().click()
 await page.waitForSelector('.environment:visible .panel-tab')
 await sleep(800)
 check('restaura as sessões do ambiente', (await page.locator('.environment:visible .terminal-panel').count()) === 4)
@@ -708,14 +751,55 @@ check('a sessão destacada continua destacada', await page.locator('.focus-strip
 
 // Apagar
 await goHome(page)
-await button(page, 'Carregar ambiente').click()
+await button(page, 'Histórico de ambientes').click()
 const before = readdirSync(join(workspaceDir, 'Ambientes')).length
 await button(page, 'Apagar Revisão').click()
 await sleep(400)
 check('apagar remove o ambiente', readdirSync(join(workspaceDir, 'Ambientes')).length === before - 1)
 
-// Fechar todas as abas e usar o botão Retomar: volta o último ambiente fechado
+// + nas abas: cria um ambiente sem passar pelo menu inicial
 await page.getByRole('button', { name: 'Voltar', exact: true }).click()
+await page.locator('.tab-list [role=tab]').first().click()
+const tabsBeforePlus = await page.locator('.tab-list [role=tab]').count()
+await button(page, 'Novo ambiente').click()
+await page.getByText('Criar ambiente em qual projeto?').waitFor()
+check('o + das abas abre direto a escolha do projeto do novo ambiente', true)
+await projectRow(page, 'loja').click()
+await button(page, 'Novo').click()
+await page.locator('.environment:visible .terminal-panel').first().waitFor()
+check('e cria o ambiente numa aba nova', (await page.locator('.tab-list [role=tab]').count()) === tabsBeforePlus + 1)
+await shot(page, '8b-novo-ambiente-pelo-mais')
+await goHome(page)
+check('o Início volta ao menu depois do +', await page.locator('.home-actions').isVisible())
+
+// Reordenar arrastando e fixar à esquerda
+const tabBox = (name) => page.locator('.tab-list .tab', { has: page.getByRole('tab', { name, exact: true }) })
+const savedTabs = () => JSON.parse(readFileSync(join(workspaceDir, 'abas.json'), 'utf8')).openIds
+const order0 = await tabNames(page)
+await tabBox(order0[2]).dragTo(tabBox(order0[0]), { targetPosition: { x: 4, y: 10 } })
+await sleep(300)
+const order1 = await tabNames(page)
+check('arrastar reordena as abas', order1[0] === order0[2] && order1.length === order0.length, JSON.stringify(order1))
+await sleep(300)
+const idOf = (name) => readdirSync(join(workspaceDir, 'Ambientes')).map((f) => JSON.parse(readFileSync(join(workspaceDir, 'Ambientes', f), 'utf8'))).find((e) => e.name === name)
+check('a ordem nova é lembrada', savedTabs().indexOf(idOf(order0[2]).id) < savedTabs().indexOf(idOf(order0[0]).id))
+const toPin = order1[order1.length - 1] === 'Sem título' ? order1[order1.length - 2] : order1[order1.length - 1]
+await tabBox(toPin).hover()
+await button(page, `Fixar ${toPin}`).click()
+await sleep(300)
+check('fixar leva a aba para a esquerda', (await tabNames(page))[0] === toPin)
+check('o fixado fica gravado no ambiente', idOf(toPin).pinned === true)
+await tabBox(order1[1]).dragTo(tabBox(toPin), { targetPosition: { x: 4, y: 10 } })
+await sleep(300)
+check('arrastar não passa uma aba comum para antes das fixadas', (await tabNames(page))[0] === toPin)
+await page.mouse.move(700, 500)
+await sleep(300)
+await shot(page, '8b2-abas-fixadas')
+await button(page, `Desafixar ${toPin}`).click()
+await sleep(300)
+check('desafixar tira o alfinete e grava', !(await tabBox(toPin).getAttribute('class')).includes('pinned') && idOf(toPin).pinned === false)
+
+// Fechar todas as abas e usar o botão Retomar: volta o último ambiente fechado
 const closeTab = async (name) => {
   await page.locator('.tab', { has: page.getByRole('tab', { name, exact: true }) }).hover()
   await button(page, `Fechar ${name}`).click()
@@ -741,6 +825,23 @@ await page.locator('.environment:visible .panel-tab').first().waitFor()
 await sleep(1000)
 check('Retomar reabre o ambiente com o layout', (await page.locator('.environment:visible .dv-groupview').count()) >= 3)
 check('Retomar reabre as sessões', (await page.locator('.environment:visible .terminal-panel').count()) === 4 && (await page.locator('.environment:visible .terminal-stopped').count()) === 0)
+
+// Histórico de ambientes: buscar um fechado e reabrir com as sessões
+await closeTab('loja')
+await page.waitForSelector('.home-actions')
+await button(page, 'Histórico de ambientes').click()
+const historySearch = page.getByLabel('Buscar ambiente')
+await historySearch.fill('nada-disso')
+check('a busca avisa quando não encontra', await page.getByText('Nada encontrado para "nada-disso".').isVisible())
+await historySearch.fill('LOJA terminal')
+const historyRows = page.locator('.home-row')
+check('a busca encontra pelo nome e pelas sessões, sem diferenciar maiúsculas', (await historyRows.count()) >= 1 && (await historyRows.first().textContent()).includes('fechado em'), await historyRows.first().textContent())
+await shot(page, '8d-historico-ambientes')
+await historyRows.filter({ has: page.getByText('loja', { exact: true }) }).first().locator('button').first().click()
+await page.getByRole('tab', { name: 'loja', exact: true }).waitFor()
+await page.locator('.environment:visible .terminal-panel').first().waitFor()
+await sleep(1000)
+check('reabrir pelo histórico retoma as sessões', (await page.locator('.environment:visible .terminal-panel').count()) === 4 && (await page.locator('.environment:visible .terminal-stopped').count()) === 0)
 
 // Sem abas abertas, abre na tela inicial, com o que retomar
 await closeTab('loja')

@@ -55,15 +55,18 @@ Um novo canal de IPC passa por três arquivos: `shared/types.ts`, `preload/index
 
 - Integração por terminal real, não por Agent SDK.
 - O projeto é o centro: toda sessão parte de um projeto, e o histórico é por projeto.
-- A pasta de trabalho é escolhida uma única vez. Não peça ao usuário para escolher onde salvar.
+- A pasta de trabalho é escolhida uma única vez e guarda só os dados da IDE. Escolher uma pasta dentro de um repositório Git só gera um aviso.
+- Projeto novo nunca vai para dentro da pasta de trabalho: a pessoa dá o nome e escolhe onde criar, e o seletor abre no último lugar usado.
 - A IDE volta como estava: as mesmas abas, o mesmo layout e a mesma aba ativa, inclusive depois de uma queda. Sem abas abertas, abre na tela inicial, que oferece Retomar o último ambiente.
 - Sessões que rodavam são retomadas sozinhas, mas sem continuar a tarefa. Importados e modelos nunca iniciam sozinhos.
 - Sessão que trabalhava quando foi encerrada mostra "Atenção" até a pessoa digitar nela ou dispensar.
+- O + logo após as abas de ambiente leva direto a "Criar ambiente em qual projeto?".
+- Abas de ambiente se reordenam arrastando. Fixadas (alfinete) ficam sempre à esquerda; arrastar não cruza entre fixadas e demais. O fixado fica no ambiente e não vai na exportação.
 - Criar ambiente não tem modelos de exemplo: abre salvo, com uma sessão. A única escolha é copiar o layout de um ambiente salvo, e sem nenhum salvo a tela é pulada.
-- Fechar uma aba não apaga o ambiente; apagar é uma ação separada.
+- Fechar uma aba não apaga o ambiente; apagar é uma ação separada. O Histórico de ambientes, na tela inicial, lista abertos e fechados com busca por ambiente, projeto ou sessão, e reabrir retoma as sessões que estavam abertas ao fechar.
 - Fechar sessão ou terminal é direto, sem confirmação. Fechar um ambiente sempre pede confirmação; o temporário pergunta se salva ou descarta.
-- A barra lateral tem ações separadas: nova sessão, terminal na pasta da sessão atual, sessão do Claude em worktree, Git, Plugins e Comandos. Não há menu de opções. Configurações ficam no pé da barra e só tratam do rodapé.
-- O rodapé só mostra estado, nunca tem ações: uso do Claude (5h e semana), contexto da sessão do Claude em uso e, à direita, o Git da sessão em uso. Sem textos explicativos. Cada indicador tem sua opção nas configurações, e nenhuma muda algo nas sessões.
+- A barra lateral tem ações separadas: nova sessão, terminal na pasta da sessão atual, sessão do Claude em worktree, Git, Plugins e Comandos. Não há menu de opções. Configurações ficam no pé da barra e só tratam do rodapé. Clicar em Visão geral expande ou recolhe a barra: expandida mostra o nome ao lado de cada ícone e não mostra dica; recolhida mostra a dica.
+- O rodapé só mostra estado, nunca tem ações: uso do Claude (5h e semana), contexto e tempo até o cache vencer da sessão do Claude em uso e, à direita, o Git da sessão em uso. Sem textos explicativos. Cada indicador tem sua opção nas configurações, e nenhuma muda algo nas sessões.
 - Ações de Git ficam no ícone Git da barra lateral e nunca forçam: trocar de branch é recusado com alterações versionadas, pull é só `--ff-only`, push não força e remover worktree pede confirmação e recusa uma em uso.
 - "Ver alterações", no menu Git, abre o painel Alterações: diff unificado da pasta contra o último commit, com stage, sem stage e arquivos novos juntos. É só leitura, sem stage nem descarte. O painel guarda a pasta onde abriu, e há um por pasta.
 - O painel de plugins ativa e desativa pelo `claude plugin` oficial. Nunca reinicia sessões: avisa quais precisam reiniciar ou de `/reload-plugins`.

@@ -7,21 +7,23 @@ import type { CreateEnvironmentRequest, CreateSessionRequest, Environment, Histo
 import { adapterIds, listAdapters } from './adapters'
 import { setClaudeSettings } from './adapters/claude'
 import { CommandStore } from './commands'
-import { fileDiff, gitChanges, gitStatus, listBranches, listWorktrees, removeWorktree, requireWorktree, runGitAction } from './git'
+import { fileDiff, gitChanges, gitStatus, repositoryRoot, listBranches, listWorktrees, removeWorktree, requireWorktree, runGitAction } from './git'
 import { listPlugins, setPluginEnabled } from './plugins'
 import { UsageTracker } from './usage'
 import { exportEnvironment, importEnvironment } from './exchange'
 import { denyRead, getProtection, listConfigFiles, listTree, readProjectFile, writeProjectFile } from './files'
 import { listHistory } from './history'
+import { sessionCache } from './cache'
 import { SessionManager } from './sessions'
 import { EnvironmentStore, markInterrupted } from './store'
-import { Workspace } from './workspace'
+import { validateProjectName, Workspace } from './workspace'
 import { createWorktree } from './worktree'
 
 // Os testes usam um perfil separado e escolhem as pastas sem abrir diálogos.
 if (process.env.AGENT_IDE_USER_DATA) app.setPath('userData', process.env.AGENT_IDE_USER_DATA)
 const TEST_DIRECTORY = process.env.AGENT_IDE_TEST_DIRECTORY
 const TEST_WORKSPACE = process.env.AGENT_IDE_TEST_WORKSPACE
+const TEST_PROJECT_PARENT = process.env.AGENT_IDE_TEST_PROJECT_PARENT
 const TEST_EXCHANGE_FILE = process.env.AGENT_IDE_TEST_EXCHANGE_FILE
 
 let win: BrowserWindow | null = null
@@ -35,8 +37,9 @@ const send = (channel: string, ...args: unknown[]): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
 }
 
-async function pickDirectory(title: string): Promise<string | null> {
-  const result = await dialog.showOpenDialog(win!, { title, properties: ['openDirectory'] })
+async function pickDirectory(title: string, defaultPath?: string): Promise<string | null> {
+  // O seletor do Windows já tem "Nova pasta"; no Mac, createDirectory liga o botão.
+  const result = await dialog.showOpenDialog(win!, { title, defaultPath, properties: ['openDirectory', 'createDirectory'] })
   return result.canceled ? null : (result.filePaths[0] ?? null)
 }
 
@@ -108,15 +111,40 @@ function registerIpc(): void {
 
   ipcMain.handle('workspace:get', () => workspace.dir)
   ipcMain.handle('workspace:choose', async () => {
-    const dir = TEST_WORKSPACE ?? (await pickDirectory('Escolha a pasta de trabalho da IDE'))
-    if (dir) useWorkspace(dir)
-    return dir
+    if (TEST_WORKSPACE) {
+      useWorkspace(TEST_WORKSPACE)
+      return TEST_WORKSPACE
+    }
+    for (;;) {
+      const dir = await pickDirectory('Escolha a pasta de trabalho da IDE')
+      if (!dir) return null
+      // Só avisa: dados da IDE dentro de um repositório se misturam com o código dele.
+      const repo = await repositoryRoot(dir)
+      if (repo) {
+        const { response } = await dialog.showMessageBox(win!, {
+          type: 'warning',
+          title: 'Pasta dentro de um repositório Git',
+          message: 'Esta pasta está dentro de um repositório Git.',
+          detail: `${repo}\n\nAmbientes, abas, comandos e a lista de projetos da IDE ficariam junto com o código dele.`,
+          buttons: ['Escolher outra', 'Usar mesmo assim'],
+          defaultId: 0,
+          cancelId: 0
+        })
+        if (response === 0) continue
+      }
+      useWorkspace(dir)
+      return dir
+    }
   })
   ipcMain.handle('workspace:open', () => shell.openPath(workspace.dir ?? ''))
   ipcMain.handle('project:open', (_e, id: string) => shell.openPath(workspace.get(id).path))
 
   ipcMain.handle('project:list', () => workspace.projects())
-  ipcMain.handle('project:create', (_e, name: string) => workspace.createManaged(name))
+  ipcMain.handle('project:create', async (_e, name: string) => {
+    const clean = validateProjectName(name)
+    const parent = TEST_PROJECT_PARENT ?? (await pickDirectory(`Onde criar "${clean}"?`, workspace.lastProjectParent ?? app.getPath('documents')))
+    return parent ? workspace.createProject(parent, clean) : null
+  })
   ipcMain.handle('project:add', async () => {
     const dir = TEST_DIRECTORY ?? (await pickDirectory('Escolha a pasta do projeto'))
     return dir ? workspace.addExisting(dir) : null
@@ -189,8 +217,14 @@ function registerIpc(): void {
     requireStore().flush()
     return env
   })
+  ipcMain.handle('env:pin', (_e, id: string, pinned: boolean) => {
+    requireStore().get(id).pinned = pinned === true
+    requireStore().flush()
+  })
   ipcMain.handle('env:close', (_e, id: string) => {
     const env = requireStore().get(id)
+    // As sessões que rodavam continuam marcadas (shouldRun): reabrir pelo histórico as retoma.
+    env.closedAt = Date.now()
     markInterrupted(env)
     for (const s of env.sessions) manager.remove(s.id)
     requireStore().flush()
@@ -338,6 +372,10 @@ function registerIpc(): void {
   ipcMain.handle('usage:get', () => usage.usage())
   ipcMain.handle('prefs:get', () => usage.preferences())
   ipcMain.handle('context:get', (_e, id: string) => usage.context(id))
+  ipcMain.handle('cache:get', (_e, id: string) => {
+    const session = (store?.all() ?? []).flatMap((env) => env.sessions).find((s) => s.id === id)
+    return session?.adapterId === 'claude' ? sessionCache(session.cwd, session.id) : null
+  })
   ipcMain.handle('prefs:save', (_e, prefs: Preferences) => usage.savePreferences(prefs))
 
   ipcMain.handle('files:tree', (_e, cwd: string) => listTree(cwd))

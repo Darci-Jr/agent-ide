@@ -46,6 +46,15 @@ export function parseStatus(text: string): Pick<GitStatus, 'branch' | 'detached'
   return { branch: detached ? oid.slice(0, 7) : branch, detached, ahead, behind, upstream, changed, tracked }
 }
 
+/** Raiz do repositório Git que contém a pasta, ou nulo. */
+export async function repositoryRoot(cwd: string): Promise<string | null> {
+  try {
+    return (await git(cwd, ['rev-parse', '--show-toplevel'])).trim() || null
+  } catch {
+    return null
+  }
+}
+
 /** Estado do repositório da pasta, ou nulo quando ela não é um repositório. */
 export async function gitStatus(cwd: string): Promise<GitStatus | null> {
   let root: string
