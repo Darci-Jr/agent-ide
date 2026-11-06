@@ -34,6 +34,7 @@ nsis:
   artifactName: Agent-IDE-Setup-${version}.${ext}
   deleteAppDataOnUninstall: false
 
+# Diz ao app instalado onde procurar atualizações. O envio para a release é do workflow, com o gh.
 publish:
   provider: github
   owner: Darci-Jr

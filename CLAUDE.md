@@ -22,7 +22,7 @@ npm run dist                # instalador em dist/, sem publicar
 node e2e/packaged.mjs       # abre o app empacotado (depois do dist)
 ```
 
-**Publicar uma versão:** suba `version` no `package.json`, faça o commit e envie a tag igual (`v0.2.0`). O GitHub Actions (`.github/workflows/release.yml`) confere a versão, roda typecheck e testes e publica o instalador na release. Quem tem o app instalado recebe a atualização dali. Só com pedido do usuário.
+**Publicar uma versão:** suba `version` no `package.json`, faça o commit e envie a tag igual (`v0.2.0`). O GitHub Actions (`.github/workflows/release.yml`) confere a versão, roda typecheck e testes e publica o instalador na release. Quem tem o app instalado recebe a atualização dali, pelo `latest.yml`: release sem ele não atualiza ninguém. O envio é com `gh release`, porque o do electron-builder terminava sem mandar tudo e sem acusar erro. Só com pedido do usuário.
 
 `node e2e/claude-real.mjs` usa um Claude Code real e **consome tokens**. Rode só de propósito e depois de `npm run build`, quando mexer em sessões, retomada ou histórico.
 

@@ -13,9 +13,9 @@ jobs:
   windows:
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version: 24
           cache: npm
@@ -34,8 +34,18 @@ jobs:
 
       - run: npm run typecheck
       - run: npm test
+      - run: npm run dist
 
-      - name: Gera e publica o instalador
-        run: npm run release
+      # O envio é do gh, não do electron-builder: o dele terminava antes de mandar o instalador
+      # inteiro e o latest.yml, sem acusar erro. Sem o latest.yml, ninguém recebe a atualização.
+      - name: Publica na release
+        shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          arquivos=(dist/Agent-IDE-Setup-*.exe dist/Agent-IDE-Setup-*.exe.blockmap dist/latest.yml)
+          ls -l "${arquivos[@]}"
+          gh release create "$GITHUB_REF_NAME" "${arquivos[@]}" --title "${GITHUB_REF_NAME#v}" --generate-notes
+          # Confere que a release ficou com os três arquivos completos.
+          gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[] | "\(.name) \(.size)"'
+          test "$(gh release view "$GITHUB_REF_NAME" --json assets -q '[.assets[] | select(.state == "uploaded")] | length')" = 3
