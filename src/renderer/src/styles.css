@@ -1842,3 +1842,24 @@ button:disabled {
   border-color: var(--accent);
   box-shadow: inset 3px 0 0 var(--accent);
 }
+
+.update-ready {
+  color: var(--accent);
+}
+
+.settings-version {
+  margin: 18px 0 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-version h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.settings-version p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
+}

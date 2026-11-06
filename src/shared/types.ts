@@ -192,6 +192,18 @@ export interface SessionContext {
   updatedAt: number
 }
 
+/** Atualização do app instalado. `disabled` em desenvolvimento e nos testes. */
+export interface UpdateState {
+  /** Versão em uso. */
+  version: string
+  status: 'disabled' | 'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'error'
+  /** Versão nova encontrada ou já baixada. */
+  available?: string
+  percent?: number
+  checkedAt?: number
+  error?: string
+}
+
 /** Cache do prompt da conversa: cada resposta renova o prazo. */
 export interface CacheInfo {
   /** Última resposta que leu ou criou cache. */
@@ -429,6 +441,12 @@ export interface IdeApi {
   gitFileDiff(cwd: string, path: string): Promise<FileDiff>
   /** Alguma ação de Git terminou: o rodapé relê o estado. */
   onGitChanged(cb: () => void): () => void
+
+  getUpdate(): Promise<UpdateState>
+  checkUpdate(): Promise<UpdateState>
+  /** Reinicia na versão já baixada. */
+  installUpdate(): Promise<void>
+  onUpdate(cb: (state: UpdateState) => void): () => void
   /** Gerais e do projeto, nessa ordem. */
   listCommands(projectId: string): Promise<CustomCommand[]>
   saveCommand(projectId: string, draft: CommandDraft, id?: string): Promise<CustomCommand>

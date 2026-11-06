@@ -17,10 +17,16 @@ import { sessionCache } from './cache'
 import { SessionManager } from './sessions'
 import { EnvironmentStore, markInterrupted } from './store'
 import { validateProjectName, Workspace } from './workspace'
+import { Updater } from './updater'
 import { createWorktree } from './worktree'
 
-// Os testes usam um perfil separado e escolhem as pastas sem abrir diálogos.
-if (process.env.AGENT_IDE_USER_DATA) app.setPath('userData', process.env.AGENT_IDE_USER_DATA)
+// Os testes usam um perfil separado e escolhem as pastas sem abrir diálogos. Fora deles, a pasta
+// é sempre "agent-ide": com o nome do instalador ("Agent IDE") o Electron usaria outra pasta, e quem
+// já usava perderia a pasta de trabalho escolhida, as preferências e os comandos gerais.
+app.setPath('userData', process.env.AGENT_IDE_USER_DATA ?? join(app.getPath('appData'), 'agent-ide'))
+// O `electron-vite preview` (npm run start) define NODE_ENV=production, e os terminais da IDE herdariam:
+// um `npm install` neles pularia as dependências de desenvolvimento sem avisar.
+if (!app.isPackaged && process.env.NODE_ENV === 'production') delete process.env.NODE_ENV
 const TEST_DIRECTORY = process.env.AGENT_IDE_TEST_DIRECTORY
 const TEST_WORKSPACE = process.env.AGENT_IDE_TEST_WORKSPACE
 const TEST_PROJECT_PARENT = process.env.AGENT_IDE_TEST_PROJECT_PARENT
@@ -33,6 +39,7 @@ let templates: TemplateStore | null = null
 let workspace: Workspace
 let usage: UsageTracker
 let commands: CommandStore
+let updater: Updater
 
 const send = (channel: string, ...args: unknown[]): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
@@ -140,6 +147,9 @@ function registerIpc(): void {
   ipcMain.handle('adapters:list', () => listAdapters())
 
   ipcMain.handle('workspace:get', () => workspace.dir)
+  ipcMain.handle('update:get', () => updater.get())
+  ipcMain.handle('update:check', () => updater.check())
+  ipcMain.handle('update:install', () => updater.install())
   ipcMain.handle('workspace:choose', async () => {
     if (TEST_WORKSPACE) {
       useWorkspace(TEST_WORKSPACE)
@@ -535,11 +545,14 @@ void app.whenReady().then(() => {
       send('session:states', states)
     }
   })
+  updater = new Updater((state) => send('update:changed', state))
   registerIpc()
   createWindow()
+  updater.start()
 })
 
 app.on('window-all-closed', () => {
+  updater?.dispose()
   manager?.dispose()
   usage?.dispose()
   store?.flush()

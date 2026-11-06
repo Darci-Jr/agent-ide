@@ -208,3 +208,12 @@ describe('cache do prompt', () => {
     expect(readCacheInfo(JSON.stringify({ type: 'user', message: { content: 'oi' } }))).toBeNull()
   })
 })
+
+describe('atualizações', () => {
+  it('traduz os erros comuns e corta o resto', async () => {
+    const { updateError } = await import('./updateError')
+    expect(updateError(new Error('HttpError: 404 Not Found\n"method: GET url: https://github.com/..."'))).toBe('nenhuma versão publicada encontrada')
+    expect(updateError(new Error('net::ERR_INTERNET_DISCONNECTED'))).toBe('sem conexão com o servidor de atualizações')
+    expect(updateError('falhou\ndetalhe')).toBe('falhou')
+  })
+})

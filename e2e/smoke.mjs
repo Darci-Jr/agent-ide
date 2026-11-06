@@ -73,6 +73,8 @@ async function launch() {
   }
   delete env.ELECTRON_RUN_AS_NODE
   delete env.ELECTRON_RENDERER_URL
+  // Como o npm run start (electron-vite preview) abre o app.
+  env.NODE_ENV = 'production'
   const app = await _electron.launch({ executablePath: electronPath, args: [root], env, cwd: root })
   const page = await app.firstWindow()
   page.on('pageerror', (e) => check(`sem erro na página: ${e.message}`, false))
@@ -184,7 +186,9 @@ const panels = await hosts(page).evaluateAll((els) =>
 const xs = new Set(panels.map((p) => p[0])), ys = new Set(panels.map((p) => p[1]))
 check('as sessões formam uma grade', xs.size >= 2 && ys.size >= 2, JSON.stringify(panels))
 await typeIn(page, 0, 'echo MARCADOR-SESSAO\r')
+await typeIn(page, 2, 'echo "NODE-ENV=[$env:NODE_ENV]"\r')
 await sleep(1500)
+check('os terminais não herdam o NODE_ENV=production do npm run start', await anyHostHas(page, 'NODE-ENV=[]'))
 await shot(page, '1-grade')
 
 // Histórico do terminal
@@ -334,6 +338,13 @@ check('trocar para um terminal esconde o contexto', !(await usageBar.textContent
 
 await button(page, 'Configurações').click()
 const settingsDialog = page.getByRole('dialog', { name: 'Configurações' })
+const appVersion = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
+check(
+  'as configurações mostram a versão, e fora do app instalado não procuram atualização',
+  (await settingsDialog.getByText(`Agent IDE ${appVersion}`).isVisible()) &&
+    (await settingsDialog.getByText('Atualizações só funcionam no app instalado.').isVisible()) &&
+    (await settingsDialog.getByRole('button', { name: 'Procurar atualizações' }).isDisabled())
+)
 const usageOption = settingsDialog.getByRole('checkbox', { name: 'Mostrar uso do Claude no rodapé' })
 const contextOption = settingsDialog.getByRole('checkbox', { name: 'Mostrar janela de contexto no rodapé' })
 await usageOption.uncheck()

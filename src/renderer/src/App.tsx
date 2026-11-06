@@ -1,6 +1,6 @@
 import type { DockviewApi } from 'dockview-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import type { AdapterInfo, CacheInfo, ClaudeUsage, CustomCommand, Environment, GitStatus, Preferences, SessionContext, SessionState } from '../../shared/types'
+import type { AdapterInfo, UpdateState, CacheInfo, ClaudeUsage, CustomCommand, Environment, GitStatus, Preferences, SessionContext, SessionState } from '../../shared/types'
 import { SettingsDialog } from './SettingsDialog'
 import { UsageBar } from './UsageBar'
 import { CommandButtons } from './CommandButtons'
@@ -58,6 +58,7 @@ export function App(): ReactNode {
     })
   }, [])
   const [usage, setUsage] = useState<ClaudeUsage | null>(null)
+  const [update, setUpdate] = useState<UpdateState | null>(null)
   const [prefs, setPrefs] = useState<Preferences>({ showUsage: true, showContext: true, showCache: true, showGit: true })
   // Sessão em uso em cada ambiente, e o contexto já lido de cada sessão.
   const [activeSessions, setActiveSessions] = useState<Record<string, string>>({})
@@ -104,11 +105,14 @@ export function App(): ReactNode {
     void ide.listSessionStates().then(setStateList)
     void ide.getUsage().then(setUsage)
     void ide.getPreferences().then(setPrefs)
+    void ide.getUpdate().then(setUpdate)
+    const offUpdate = ide.onUpdate(setUpdate)
     const offUsage = ide.onUsage(setUsage)
     const offContext = ide.onContext((sessionId, context) => setContexts((all) => ({ ...all, [sessionId]: context })))
     const offStates = ide.onSessionStates(setStateList)
     return () => {
       offUsage()
+      offUpdate()
       offContext()
       offStates()
     }
@@ -312,6 +316,15 @@ export function App(): ReactNode {
     void closeSaved(env)
   }
 
+  /** Só a pedido: o app fecha, instala e reabre; as sessões que rodavam voltam sem continuar a tarefa. */
+  const installUpdate = (): void => {
+    if (!update || update.status !== 'ready') return
+    const unsaved = unsavedPanels.size > 0 ? ' Há arquivos com alterações não salvas, que serão descartadas.' : ''
+    if (!window.confirm(`Reiniciar para atualizar para a versão ${update.available}? As sessões voltam abertas, sem continuar o que faziam.${unsaved}`)) return
+    unsavedPanels.clear()
+    void ide.installUpdate()
+  }
+
   const renameEnvironment = (env: Environment, name: string): void => {
     setRenaming(null)
     const clean = name.trim()
@@ -474,6 +487,9 @@ export function App(): ReactNode {
             }}
           />
         )}
+        {update?.status === 'ready' && (
+          <IconButton icon="download" label={`Versão ${update.available} pronta. Clique para reiniciar e atualizar`} className="update-ready" onClick={installUpdate} />
+        )}
         <IconButton icon="openFolder" label="Abrir pasta da IDE" onClick={() => void ide.openWorkspaceFolder()} />
       </header>
 
@@ -526,7 +542,7 @@ export function App(): ReactNode {
       )}
 
       {modal?.kind === 'settings' && (
-        <SettingsDialog prefs={prefs} changePrefs={changePrefs} onClose={() => setModal(null)} />
+        <SettingsDialog prefs={prefs} changePrefs={changePrefs} update={update} installUpdate={installUpdate} onClose={() => setModal(null)} />
       )}
 
       {modal?.kind === 'template' && (

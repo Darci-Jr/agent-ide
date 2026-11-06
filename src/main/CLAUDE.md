@@ -21,6 +21,10 @@ Quem instala ou testa o app usa perfil próprio: nos testes, defina `AGENT_IDE_U
 
 ## Armadilhas
 
+- **Pasta de dados:** fixada em `%APPDATA%/agent-ide` no início de `index.ts`. Com o `productName` do instalador ("Agent IDE"), o Electron usaria outra pasta e quem já usava perderia a pasta de trabalho, as preferências e os comandos gerais.
+- **`NODE_ENV`:** o `electron-vite preview` define `production` e os terminais herdariam; um `npm install` neles pularia as dependências de desenvolvimento. Fora do app empacotado, `index.ts` apaga a variável.
+- **Atualizador:** só liga no app empacotado e fora dos testes (`AGENT_IDE_TEST_UPDATES=1` liga de propósito em `e2e/packaged.mjs`). O `node-pty` vai em `asarUnpack` no `electron-builder.yml`, ou o terminal não carrega no app instalado.
+
 - **`@lydell/node-pty` (beta) no Windows:** não encontra `node` sem o caminho completo, e `pid` é sempre 0. O `kill` funciona. O painel de aplicações em execução vai precisar de outra forma de obter o processo.
 - **Shim do npm:** `claude` é um `.cmd`, então precisa passar por `cmd.exe /c`.
 - **Processo novo:** nasce com 120x30. O renderer precisa enviar o tamanho real depois de iniciar.

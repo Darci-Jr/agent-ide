@@ -7,6 +7,16 @@ uma sessão ao lado de um documento para pensar junto com o agente.
 Hoje funciona com o Claude Code e com qualquer CLI rodando em uma sessão de terminal comum.
 Testado apenas no Windows.
 
+## Instalação
+
+Baixe o `Agent-IDE-Setup-<versão>.exe` na página de releases do GitHub e execute. Ele instala só para
+o seu usuário, sem pedir administrador. Como o instalador ainda não é assinado, o Windows pode mostrar
+"O Windows protegeu o computador": clique em **Mais informações** e em **Executar assim mesmo**.
+
+Depois disso, a IDE se atualiza sozinha: baixa a versão nova em segundo plano e avisa na barra de
+cima quando ela está pronta. Ela nunca reinicia sem você pedir, e a versão nova também entra quando
+você fecha a IDE.
+
 ## O que faz
 
 - **Pasta de trabalho:** escolhida uma vez, no primeiro uso. Guarda só os dados da IDE:
