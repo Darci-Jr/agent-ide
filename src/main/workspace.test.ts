@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Environment } from '../shared/types'
 import { worktreeSlug } from '../shared/worktreeName'
 import { listHistory } from './history'
-import { exportEnvironment } from './exchange'
+import { templateLayout } from './exchange'
 import { EnvironmentStore } from './store'
 import { validateProjectName, Workspace } from './workspace'
 
@@ -19,10 +19,8 @@ const env = (over: Partial<Environment> = {}): Environment => ({
   id: 'aaaaaaaa-1111',
   name: 'Sem título',
   projectId: 'p1',
-  draft: true,
   lastOpenedAt: 1,
   cwd: dir,
-  template: 'multi',
   sessions: [],
   layout: null,
   ...over
@@ -63,9 +61,11 @@ describe('restauração', () => {
     expect(workspace.tabs()).toEqual({ openIds: [], activeId: null })
   })
 
-  it('a exportação não leva o estado de execução', () => {
-    const text = exportEnvironment(env({ sessions: [{ ...session, working: true, interrupted: true }] }), null)
-    expect(text).not.toMatch(/shouldRun|working|interrupted/)
+  it('o painel de alterações não leva a pasta da máquina para o template', () => {
+    const layout = { panels: { d: { id: 'd', contentComponent: 'diff', title: 'Alterações · main', params: { kind: 'diff', cwd: 'C:\\Users\\alguem\\repo' } } } }
+    const clean = templateLayout(env({ sessions: [] }), layout) as any
+    expect(JSON.stringify(clean)).not.toContain('alguem')
+    expect(clean.panels.d.params).toEqual({ kind: 'diff', cwd: null })
   })
 })
 
@@ -75,7 +75,7 @@ describe('Workspace', () => {
     const root = join(dir, 'trabalho')
     mkdirSync(root)
     new Workspace(pointer).choose(root)
-    expect(readdirSync(root).sort()).toEqual(['Ambientes', 'Projetos', 'Temporarios'])
+    expect(readdirSync(root).sort()).toEqual(['Ambientes'])
     expect(new Workspace(pointer).dir).toBe(root)
   })
 
@@ -88,13 +88,18 @@ describe('Workspace', () => {
     expect(new Workspace(pointer).dir).toBeNull()
   })
 
-  it('cria um projeto novo dentro de Projetos, sem perguntar onde', () => {
-    const ws = new Workspace(join(dir, 'config.json'))
-    ws.choose(dir)
-    const project = ws.createManaged('Minha loja')
-    expect(project.path).toBe(join(dir, 'Projetos', 'Minha loja'))
+  it('cria o projeto onde a pessoa escolheu, fora da pasta de trabalho, e lembra o lugar', () => {
+    const pointer = join(dir, 'config.json')
+    const ws = new Workspace(pointer)
+    ws.choose(join(dir, 'trabalho'))
+    const parent = join(dir, 'codigo')
+    mkdirSync(parent)
+    const project = ws.createProject(parent, 'Minha loja')
+    expect(project.path).toBe(join(parent, 'Minha loja'))
     expect(existsSync(project.path)).toBe(true)
-    expect(() => ws.createManaged('Minha loja')).toThrow('Já existe')
+    expect(() => ws.createProject(parent, 'Minha loja')).toThrow('Já existe')
+    expect(new Workspace(pointer).lastProjectParent).toBe(parent)
+    expect(new Workspace(pointer).dir).toBe(join(dir, 'trabalho'))
   })
 
   it('recusa nomes que escapariam da pasta ou são inválidos', () => {
@@ -123,22 +128,21 @@ describe('EnvironmentStore', () => {
     mkdirSync(join(dir, 'Temporarios'))
   }
 
-  it('move o arquivo de Temporarios para Ambientes ao salvar', () => {
+  it('apaga os temporários de versões anteriores e mantém os ambientes', () => {
     prepare()
+    writeFileSync(join(dir, 'Temporarios', 'sem-titulo-1.json'), JSON.stringify(env({ id: 'rascunho', draft: true })))
+    writeFileSync(join(dir, 'Ambientes', 'velho-2.json'), JSON.stringify(env({ id: 'velho', draft: true })))
+    writeFileSync(join(dir, 'Ambientes', 'loja-3.json'), JSON.stringify(env({ id: 'loja', name: 'Loja', draft: false })))
     const store = new EnvironmentStore(dir)
-    const draft = env()
-    store.add(draft)
-    expect(readdirSync(join(dir, 'Temporarios'))).toHaveLength(1)
-    draft.draft = false
-    draft.name = 'Loja'
-    store.flush()
-    expect(readdirSync(join(dir, 'Temporarios'))).toEqual([])
-    expect(readdirSync(join(dir, 'Ambientes'))).toEqual(['loja-aaaaaaaa.json'])
+    expect(store.all().map((e) => e.id)).toEqual(['loja'])
+    expect(store.all()[0]!.draft).toBeUndefined()
+    expect(existsSync(join(dir, 'Temporarios'))).toBe(false)
+    expect(readdirSync(join(dir, 'Ambientes'))).toEqual(['loja-3.json'])
   })
 
   it('recarrega do disco, e um arquivo danificado não atrapalha os outros', () => {
     prepare()
-    new EnvironmentStore(dir).add(env({ draft: false, name: 'Loja' }))
+    new EnvironmentStore(dir).add(env({ name: 'Loja' }))
     writeFileSync(join(dir, 'Ambientes', 'ruim.json'), '{ quebrado')
     const reloaded = new EnvironmentStore(dir)
     expect(reloaded.all().map((e) => e.name)).toEqual(['Loja'])

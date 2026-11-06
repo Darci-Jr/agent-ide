@@ -18,12 +18,20 @@ export interface EnvContextValue {
   /** Comandos gerais e do projeto do ambiente, que viram botões nas abas de terminal. */
   commands: CustomCommand[]
   markPluginsChanged(): void
-  openFile(path: string, asEditor?: boolean): void
+  /** Abre um terminal novo na pasta da sessão em uso e executa o comando nele. */
+  runCommand(command: CustomCommand): void
+  /** `root`: pasta do projeto do arquivo; sem ela, a do ambiente. */
+  openFile(path: string, asEditor?: boolean, root?: string | null): void
+  /** Pasta do projeto da sessão em uso. */
+  projectCwd: string
   setDirty(panelId: string, dirty: boolean): void
   toast(message: string): void
 }
 
 export const INTERRUPTED_TIP = 'Estava trabalhando quando foi encerrada. A tarefa parou e precisa da sua atenção.'
+
+/** Quem executa os comandos de cada ambiente aberto. A aba do ambiente, no App, usa daqui. */
+export const commandRunners = new Map<string, (command: CustomCommand) => void>()
 
 /** Editores com alterações não salvas, em todos os ambientes. */
 export const unsavedPanels = new Set<string>()

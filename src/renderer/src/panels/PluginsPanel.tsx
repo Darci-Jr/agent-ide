@@ -32,7 +32,7 @@ const summary = (p: PluginInfo): string =>
     .join(' · ')
 
 export function PluginsPanel(): ReactNode {
-  const { env, claudeSessions, pluginsChangedAt, markPluginsChanged } = useEnv()
+  const { projectCwd: cwd, claudeSessions, pluginsChangedAt, markPluginsChanged } = useEnv()
   const [plugins, setPlugins] = useState<PluginInfo[] | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -41,17 +41,17 @@ export function PluginsPanel(): ReactNode {
 
   const load = useCallback(() => {
     setError(null)
-    ide.listPlugins(env.cwd).then(setPlugins, (err) => setError(errorMessage(err)))
-  }, [env.cwd])
+    ide.listPlugins(cwd).then(setPlugins, (err) => setError(errorMessage(err)))
+  }, [cwd])
   useEffect(load, [load])
 
   const toggle = async (plugin: PluginInfo): Promise<void> => {
     setBusy(plugin.id)
     setError(null)
     try {
-      await ide.setPluginEnabled(env.cwd, plugin.id, !plugin.enabled)
+      await ide.setPluginEnabled(cwd, plugin.id, !plugin.enabled)
       markPluginsChanged()
-      setPlugins(await ide.listPlugins(env.cwd))
+      setPlugins(await ide.listPlugins(cwd))
     } catch (err) {
       setError(errorMessage(err))
     } finally {

@@ -4,8 +4,8 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Environment } from '../shared/types'
 import { childEnv } from './childEnv'
-import { exportEnvironment, importEnvironment } from './exchange'
 import { denyRead, getProtection, isSensitive, listConfigFiles, listTree, readProjectFile, writeProjectFile } from './files'
+import { cleanGroups, exportTemplate, groupsOf, instantiate, parseTemplateFile, sameGroups, slotsFromGroups, templateFromEnvironment } from './templates'
 
 let dir: string
 beforeEach(async () => {
@@ -98,58 +98,84 @@ describe('arquivos', () => {
   })
 })
 
-describe('exportar e importar ambientes', () => {
+describe('templates', () => {
   const sid = '11111111-2222-3333-4444-555555555555'
   const env: Environment = {
     id: 'e1',
     name: 'Loja',
     projectId: 'p1',
-    draft: false,
     lastOpenedAt: 1,
     cwd: 'C:\\Users\\Fulano\\loja',
-    template: 'multi',
-    sessions: [{ id: sid, adapterId: 'claude', title: 'Login', cwd: 'C:\\Users\\Fulano\\loja.worktrees\\abc', worktreeBranch: 'agent/abc', started: true }],
+    pinned: true,
+    sessions: [
+      { id: sid, adapterId: 'claude', title: 'Login', cwd: 'C:\\Users\\Fulano\\loja.worktrees\\abc', worktreeBranch: 'agent/abc', started: true, shouldRun: true, working: true },
+      { id: 's2', adapterId: 'shell', title: 'Servidor', cwd: 'C:\\Users\\Fulano\\api', projectId: 'p2', started: true }
+    ],
     layout: null
   }
   const layout = {
-    grid: { root: { type: 'leaf', data: { views: [`term:${sid}`, 'file:1', 'file:2'] } } },
+    grid: { root: { type: 'leaf', data: { views: [`term:${sid}`, 'file:1', 'file:2', 'd'] } } },
     panels: {
       [`term:${sid}`]: { id: `term:${sid}`, contentComponent: 'terminal', params: { kind: 'terminal', sessionId: sid } },
       'file:1': { id: 'file:1', contentComponent: 'editor', title: 'settings.json', params: { kind: 'editor', path: 'C:\\Users\\Fulano\\.claude\\settings.json' } },
-      'file:2': { id: 'file:2', contentComponent: 'markdown', title: 'a.md', params: { kind: 'markdown', path: 'docs/a.md' } }
+      'file:2': { id: 'file:2', contentComponent: 'markdown', title: 'a.md', params: { kind: 'markdown', path: 'docs/a.md', root: 'C:\\Users\\Fulano\\api' } },
+      d: { id: 'd', contentComponent: 'diff', title: 'Alterações · main', params: { kind: 'diff', cwd: 'C:\\Users\\Fulano\\loja' } }
     }
   }
+  const names: Record<string, string> = { p1: 'Loja', p2: 'API' }
 
-  it('não exporta caminhos da máquina nem ids de sessão', () => {
-    const text = exportEnvironment(env, layout)
-    expect(text).not.toContain('Fulano')
+  it('a partir de um ambiente: sessões por projeto, sem caminhos, ids, conversas nem estado', () => {
+    const template = templateFromEnvironment(env, ' Loja completa ', layout)
+    expect(template.name).toBe('Loja completa')
+    expect(template.slots).toEqual([
+      { slot: 'slot-0', projectId: 'p1', adapterId: 'claude', title: 'Login' },
+      { slot: 'slot-1', projectId: 'p2', adapterId: 'shell', title: 'Servidor' }
+    ])
+    const text = JSON.stringify(template)
+    expect(text).not.toMatch(/Fulano|agent\/abc|shouldRun|working|pinned/)
     expect(text).not.toContain(sid)
-    expect(text).not.toContain('agent/abc')
     expect(text).toContain('docs/a.md')
   })
 
-  it('importa em outra pasta com ids novos e sessões paradas', () => {
-    const imported = importEnvironment(exportEnvironment(env, layout), 'D:\\outro', 'p2', ['claude', 'shell'])
-    expect(imported.cwd).toBe('D:\\outro')
-    expect(imported.projectId).toBe('p2')
-    expect(imported.sessions[0]).toMatchObject({ cwd: 'D:\\outro', started: false, title: 'Login' })
-    const newId = imported.sessions[0]!.id
-    expect(newId).not.toBe(sid)
-    expect((imported.layout as any).panels[`term:${newId}`].params.sessionId).toBe(newId)
+  it('cria sessões novas, cada uma na pasta do seu projeto, com o layout apontando para elas', () => {
+    const template = templateFromEnvironment(env, 'Loja', layout)
+    const { sessions, layout: next } = instantiate(template.slots, template.layout, (id) => `D:\\${id}`)
+    expect(sessions.map((s) => [s.cwd, s.projectId, s.started])).toEqual([
+      ['D:\\p1', 'p1', false],
+      ['D:\\p2', 'p2', false]
+    ])
+    expect(sessions[0]!.id).not.toBe(sid)
+    expect((next as any).panels[`term:${sessions[0]!.id}`].params.sessionId).toBe(sessions[0]!.id)
   })
 
-  it('recusa arquivos maliciosos', () => {
-    const base = JSON.parse(exportEnvironment(env, layout))
-    const tamper = (fn: (d: any) => void): string => {
+  it('exporta projetos pelo nome e importa só o que é seguro', () => {
+    const text = exportTemplate(templateFromEnvironment(env, 'Loja', layout), (id) => names[id]!)
+    expect(text).not.toContain('Fulano')
+    const parsed = parseTemplateFile(text, ['claude', 'shell'])
+    expect(parsed.projects).toEqual(['Loja', 'API'])
+    expect(parsed.slots.map((s) => s.project)).toEqual([0, 1])
+    const base = JSON.parse(text)
+    const tamper = (fn: (d: any) => void): (() => unknown) => {
       const copy = structuredClone(base)
       fn(copy)
-      return JSON.stringify(copy)
+      return () => parseTemplateFile(JSON.stringify(copy), ['claude', 'shell'])
     }
-    const load = (text: string) => () => importEnvironment(text, 'D:\\x', 'p2', ['claude', 'shell'])
-    expect(load('nao json')).toThrow('inválido')
-    expect(load(tamper((d) => (d.sessions[0].adapterId = 'calc.exe')))).toThrow('agente desconhecido')
-    expect(load(tamper((d) => (d.layout.panels['file:2'].params.path = '../../.ssh/id_rsa')))).toThrow('fora do projeto')
-    expect(load(tamper((d) => (d.layout.panels['file:2'].params.path = 'C:\\Windows\\win.ini')))).toThrow('fora do projeto')
-    expect(load(tamper((d) => (d.layout.panels['file:2'].contentComponent = 'x')))).toThrow('painel desconhecido')
+    expect(() => parseTemplateFile('nao json', ['claude'])).toThrow('inválido')
+    expect(tamper((d) => (d.slots[0].adapterId = 'calc.exe'))).toThrow('agente desconhecido')
+    expect(tamper((d) => (d.slots[0].project = 9))).toThrow('sem projeto')
+    expect(tamper((d) => (d.layout.panels['file:2'].params.path = '../../.ssh/id_rsa'))).toThrow('fora do projeto')
+    expect(tamper((d) => (d.layout.panels['file:2'].params.path = 'C:\\Windows\\win.ini'))).toThrow('fora do projeto')
+    expect(tamper((d) => (d.layout.panels['file:2'].contentComponent = 'x'))).toThrow('painel desconhecido')
+  })
+
+  it('valida as quantidades e monta os títulos por projeto', () => {
+    const groups = cleanGroups([{ projectId: 'p1', claude: 2, terminals: 99 }, { projectId: 'p2', claude: -1, terminals: 1 }], ['p1', 'p2'])
+    expect(groups).toEqual([{ projectId: 'p1', claude: 2, terminals: 8 }, { projectId: 'p2', claude: 0, terminals: 1 }])
+    expect(() => cleanGroups([{ projectId: 'x', claude: 1, terminals: 0 }], ['p1'])).toThrow('Projeto')
+    expect(() => cleanGroups([{ projectId: 'p1', claude: 0, terminals: 0 }], ['p1'])).toThrow('ao menos')
+    const slots = slotsFromGroups([{ projectId: 'p1', claude: 1, terminals: 1 }, { projectId: 'p2', claude: 1, terminals: 0 }], (id) => names[id]!)
+    expect(slots.map((s) => s.title)).toEqual(['Loja · Sessão 1', 'Loja · Terminal 1', 'API · Sessão 1'])
+    expect(slotsFromGroups([{ projectId: 'p1', claude: 1, terminals: 0 }], (id) => names[id]!)[0]!.title).toBe('Sessão 1')
+    expect(sameGroups(groupsOf(slots), [{ projectId: 'p1', claude: 1, terminals: 1 }, { projectId: 'p2', claude: 1, terminals: 0 }])).toBe(true)
   })
 })

@@ -5,7 +5,7 @@ import { ide } from './ide'
 
 const MAX_RESULTS = 200
 
-export function FileDrawer(props: { cwd: string; onOpen(path: string): void }): ReactNode {
+export function FileDrawer(props: { cwd: string; onOpen(path: string, asEditor?: boolean): void }): ReactNode {
   const { cwd, onOpen } = props
   const [config, setConfig] = useState<ConfigFile[]>([])
   const [tree, setTree] = useState<TreeEntry[]>([])

@@ -1,0 +1,41 @@
+# Publica uma versão: ao enviar uma tag v1.2.3, compila no Windows, testa e põe o instalador e os
+# arquivos de atualização na release. O app instalado procura atualizações nessas releases.
+name: Publicar versão
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+
+      # A tag e a versão do package.json precisam bater, ou o app atualizado diria a versão errada.
+      - name: Confere a versão
+        shell: bash
+        run: |
+          versao="v$(node -p "require('./package.json').version")"
+          if [ "$versao" != "$GITHUB_REF_NAME" ]; then
+            echo "A tag $GITHUB_REF_NAME não bate com a versão $versao do package.json."
+            exit 1
+          fi
+
+      - run: npm run typecheck
+      - run: npm test
+
+      - name: Gera e publica o instalador
+        run: npm run release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

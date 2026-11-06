@@ -1,0 +1,41 @@
+# Instalador e atualizações. O appId não pode mudar: é por ele que as atualizações acham a instalação.
+appId: io.github.darci-jr.agent-ide
+productName: Agent IDE
+copyright: Copyright © Darci Jr
+
+directories:
+  output: dist
+  buildResources: build
+
+# Só o código compilado; o resto do repositório (e2e, src, dados de uso) fica de fora.
+files:
+  - out/**
+  - package.json
+  - "!**/*.map"
+
+# O terminal é um módulo nativo: precisa estar fora do arquivo .asar para carregar.
+asarUnpack:
+  - node_modules/@lydell/node-pty*/**
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  # Sem certificado por enquanto (nada a configurar): o Windows mostra o aviso do SmartScreen na
+  # primeira instalação. As atualizações funcionam do mesmo jeito.
+
+# Instala só para o usuário, sem pedir administrador, e atualiza sem perguntar onde.
+nsis:
+  oneClick: true
+  perMachine: false
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Agent IDE
+  artifactName: Agent-IDE-Setup-${version}.${ext}
+  deleteAppDataOnUninstall: false
+
+publish:
+  provider: github
+  owner: Darci-Jr
+  repo: agent-ide
+  releaseType: release

@@ -21,6 +21,8 @@
   --warning-text: #5c3a00;
   --ok-bg: #dcf3e9;
   --ok-text: #0f4a36;
+  --del-bg: #fbe3e1;
+  --del-text: #7a1712;
   --overlay: rgba(20, 32, 43, 0.45);
 }
 
@@ -46,6 +48,8 @@
   --warning-text: #ffe2a3;
   --ok-bg: #17392f;
   --ok-text: #b7ecd6;
+  --del-bg: #45201f;
+  --del-text: #ffc4c0;
   --overlay: rgba(5, 10, 15, 0.65);
 }
 
@@ -203,6 +207,44 @@ button:disabled {
 .tab:hover .env-close,
 .env-close:focus-visible {
   opacity: 1;
+}
+
+/* Alfinete: aparece ao passar o mouse; na aba fixada fica sempre visível. */
+.env-pin {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+}
+
+.env-pin svg {
+  width: 14px;
+  height: 14px;
+}
+
+.tab:hover .env-pin,
+.env-pin:focus-visible,
+.tab.pinned .env-pin {
+  opacity: 1;
+}
+
+.tab.pinned .env-pin {
+  color: var(--accent);
+}
+
+.tab.pinned .env-pin svg {
+  fill: currentColor;
+}
+
+.tab.dragging {
+  opacity: 0.45;
+}
+
+.tab.drop-before {
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.tab.drop-after {
+  box-shadow: inset -3px 0 0 var(--accent);
 }
 
 .tabs-space,
@@ -440,20 +482,21 @@ button:disabled {
   overflow: auto;
 }
 
-.commands-section {
-  margin-bottom: 20px;
-}
-
 .commands-head {
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding-bottom: 6px;
   border-bottom: 1px solid var(--line);
 }
 
-.commands-head h3 {
+.commands-head h2 {
   margin: 0;
-  font-size: 15px;
+}
+
+.commands-empty {
+  color: var(--muted);
+  font-size: 13px;
 }
 
 .command-list {
@@ -541,6 +584,148 @@ button:disabled {
   border-color: var(--accent);
 }
 
+.git-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+}
+
+.git-branch {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.git-dirty {
+  color: var(--accent);
+}
+
+.rail-anchor {
+  display: contents;
+}
+
+.git-menu {
+  position: fixed;
+  left: 50px;
+  z-index: 1050;
+  width: 340px;
+  max-height: calc(100vh - 80px);
+  overflow: auto;
+  padding: 12px 14px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18);
+}
+
+.git-menu h3 {
+  margin: 0 0 10px;
+  font-size: 15px;
+}
+
+.git-menu h4 {
+  margin: 14px 0 4px;
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.git-actions {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.git-actions button {
+  flex: 1;
+}
+
+.git-branches,
+.git-worktrees {
+  margin: 0 0 6px;
+  padding: 0;
+  list-style: none;
+}
+
+.git-branches button {
+  width: 100%;
+  padding: 5px 8px;
+  background: transparent;
+  border: 0;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+  text-align: left;
+}
+
+.git-branches button:hover:not(:disabled) {
+  background: var(--hover);
+}
+
+.git-new-branch {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.git-new-branch input {
+  flex: 1;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  background: var(--surface);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+}
+
+.git-worktrees li {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-bottom: 1px solid var(--line);
+}
+
+.git-worktree-name {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+  overflow: hidden;
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.git-worktree-name small {
+  color: var(--muted);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+}
+
+.git-worktrees li.on .git-worktree-name {
+  font-weight: 700;
+}
+
+.git-muted {
+  margin: 0;
+  color: var(--muted);
+}
+
+.git-error,
+.git-ok {
+  margin: 4px 0 8px;
+  font-size: 13px;
+}
+
+.git-error {
+  color: var(--stopped);
+}
+
+.git-ok {
+  color: var(--ok-text);
+}
+
 .settings-list {
   display: flex;
   flex-direction: column;
@@ -585,6 +770,28 @@ button:disabled {
   color: var(--text);
   border-left-color: var(--accent);
   background: var(--hover);
+}
+
+/* Expandida: o nome de cada ação ao lado do ícone. Empurra o layout, não fica por cima. */
+.rail.expanded {
+  width: auto;
+  max-width: 280px;
+}
+
+.rail.expanded .icon {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 10px;
+  padding: 0 12px 0 11px;
+}
+
+.icon-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  text-align: left;
 }
 
 .workspace {
@@ -1055,35 +1262,6 @@ button:disabled {
   gap: 8px;
 }
 
-.templates {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.template {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 14px;
-  background: var(--strip);
-  border: 0;
-  border-radius: 2px;
-  text-align: left;
-}
-
-.template:hover {
-  background: var(--strip-hover);
-}
-
-.template strong {
-  font-size: 16px;
-}
-
-.template span {
-  color: var(--muted);
-}
-
 .toast {
   position: fixed;
   right: 16px;
@@ -1318,4 +1496,370 @@ button:disabled {
 
 .tab .draft {
   font-style: italic;
+}
+
+.diff-panel {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  overflow: hidden;
+}
+
+.diff-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+.diff-files {
+  width: 34%;
+  min-width: 160px;
+  max-width: 320px;
+  margin: 0;
+  padding: 4px 0;
+  overflow: auto;
+  list-style: none;
+  border-right: 1px solid var(--line);
+}
+
+.diff-files button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 10px;
+  background: transparent;
+  border: 0;
+  border-left: 3px solid transparent;
+  color: var(--text);
+  font-size: 13px;
+  text-align: left;
+}
+
+.diff-files button:hover {
+  background: var(--hover);
+}
+
+.diff-files button.on {
+  background: var(--strip);
+  border-left-color: var(--accent);
+}
+
+.diff-mark {
+  width: 12px;
+  flex: none;
+  text-align: center;
+  font-weight: 700;
+}
+
+.diff-mark.added,
+.diff-mark.untracked {
+  color: var(--ok-text);
+}
+
+.diff-mark.deleted {
+  color: var(--del-text);
+}
+
+.diff-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-name small {
+  margin-left: 6px;
+  color: var(--muted);
+}
+
+.diff-counts {
+  flex: none;
+  color: var(--muted);
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 11px;
+}
+
+.diff-view {
+  flex: 1;
+  min-width: 0;
+  overflow: auto;
+}
+
+.diff-view .git-muted {
+  padding: 0 12px;
+}
+
+.diff-path {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 6px 12px;
+  background: var(--panel);
+  border-bottom: 1px solid var(--line);
+  font-size: 12px;
+}
+
+.diff-lines {
+  margin: 0;
+  min-width: max-content;
+  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  tab-size: 4;
+}
+
+.diff-line {
+  display: flex;
+  white-space: pre;
+}
+
+.diff-line.add {
+  background: var(--ok-bg);
+  color: var(--ok-text);
+}
+
+.diff-line.del {
+  background: var(--del-bg);
+  color: var(--del-text);
+}
+
+.diff-line.hunk {
+  margin-top: 6px;
+  background: var(--board);
+  color: var(--muted);
+}
+
+.diff-no {
+  width: 44px;
+  flex: none;
+  padding-right: 8px;
+  color: var(--muted);
+  text-align: right;
+  user-select: none;
+}
+
+.diff-line.add .diff-no,
+.diff-line.del .diff-no {
+  color: inherit;
+  opacity: 0.7;
+}
+
+.diff-sign {
+  width: 16px;
+  flex: none;
+  user-select: none;
+}
+
+.diff-text {
+  padding-right: 12px;
+}
+
+/* Painel estreito: a lista vai para cima e o diff fica com a largura toda. */
+.diff-panel {
+  container-type: inline-size;
+}
+
+@container (max-width: 560px) {
+  .diff-body {
+    flex-direction: column;
+  }
+
+  .diff-files {
+    width: auto;
+    max-width: none;
+    max-height: 35%;
+    flex: none;
+    border-right: 0;
+    border-bottom: 1px solid var(--line);
+  }
+}
+
+.git-diff {
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.tab-new {
+  flex: none;
+  margin-left: 2px;
+}
+
+.home-tag {
+  margin-left: 8px;
+  padding: 1px 6px;
+  background: var(--strip);
+  border-radius: 3px;
+  color: var(--muted);
+  font-size: 11px;
+  font-style: normal;
+  font-weight: 500;
+}
+
+/* Novo ambiente e templates: uma linha por projeto, com as quantidades à direita. */
+.new-env-template {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 16px;
+  color: var(--muted);
+  font-size: 14px;
+}
+
+.new-env-template select {
+  height: 32px;
+  min-width: 220px;
+  padding: 0 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+}
+
+.new-env-table {
+  margin-bottom: 12px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 3px;
+}
+
+.new-env-head,
+.new-env-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 76px 76px 32px;
+  align-items: center;
+  gap: 8px;
+  padding: 0 8px 0 12px;
+}
+
+.new-env-head {
+  height: 32px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--line);
+}
+
+.new-env-row {
+  min-height: 42px;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+}
+
+.new-env-row:last-child {
+  border-bottom: 0;
+}
+
+.new-env-row.on {
+  color: var(--text);
+}
+
+.new-env-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 15px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.new-env-row input[type='number'] {
+  width: 100%;
+  height: 30px;
+  padding: 0 6px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+}
+
+.new-env-row input[type='number']:disabled {
+  opacity: 0.35;
+}
+
+.new-folder .new-env-name {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  padding: 6px 0;
+}
+
+.new-folder input[type='text'] {
+  height: 30px;
+  padding: 0 8px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+}
+
+.new-env-where {
+  overflow: hidden;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.new-env-where:hover {
+  color: var(--text);
+  text-decoration: underline;
+}
+
+.new-env-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 20px;
+}
+
+.new-env-actions input {
+  flex: 1;
+  height: 32px;
+  padding: 0 10px;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+}
+
+.env-rename {
+  width: 160px;
+  height: 28px;
+  margin-left: 12px;
+}
+
+.home-row.on {
+  border-color: var(--accent);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.update-ready {
+  color: var(--accent);
+}
+
+.settings-version {
+  margin: 18px 0 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-version h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.settings-version p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
 }

@@ -121,7 +121,7 @@ await page.locator('.home-row').filter({ hasText: 'projeto' }).first().locator('
 await page.getByRole('button', { name: 'Restaurar última', exact: true }).click()
 await sleep(1000)
 check('restaurar de novo vai para a aba aberta, sem duplicar', (await page.locator('.tab-list [role=tab]').count()) === 1)
-check('reaproveita o ambiente da conversa, sem criar outro', readdirSync(join(workspaceDir, 'Temporarios')).length === 1)
+check('reaproveita o ambiente da conversa, sem criar outro', readdirSync(join(workspaceDir, 'Ambientes')).length === 1)
 await sleep(1000)
 await page.screenshot({ path: join(here, '10-retomado.png') })
 await app.close()

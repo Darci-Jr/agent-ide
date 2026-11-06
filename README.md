@@ -7,16 +7,30 @@ uma sessão ao lado de um documento para pensar junto com o agente.
 Hoje funciona com o Claude Code e com qualquer CLI rodando em uma sessão de terminal comum.
 Testado apenas no Windows.
 
+## Instalação
+
+Baixe o `Agent-IDE-Setup-<versão>.exe` na página de releases do GitHub e execute. Ele instala só para
+o seu usuário, sem pedir administrador. Como o instalador ainda não é assinado, o Windows pode mostrar
+"O Windows protegeu o computador": clique em **Mais informações** e em **Executar assim mesmo**.
+
+Depois disso, a IDE se atualiza sozinha: baixa a versão nova em segundo plano e avisa na barra de
+cima quando ela está pronta. Ela nunca reinicia sem você pedir, e a versão nova também entra quando
+você fecha a IDE.
+
 ## O que faz
 
-- **Pasta de trabalho:** escolhida uma vez, no primeiro uso. A IDE organiza nela `Projetos`,
-  `Ambientes` e `Temporarios`, e nunca mais pergunta onde salvar.
-- **Projetos:** crie um novo ou adicione uma pasta existente. Toda sessão parte de um projeto.
+- **Pasta de trabalho:** escolhida uma vez, no primeiro uso. Guarda só os dados da IDE:
+  `Ambientes`, `Templates`, a lista de projetos e os comandos. Prefira uma pasta fora de
+  repositórios Git; a IDE avisa se não for.
+- **Projetos:** crie um novo, escolhendo onde a pasta dele fica, ou adicione uma pasta existente.
+  Toda sessão parte de um projeto.
 - **Histórico:** as conversas do Claude Code de cada projeto, com a opção de restaurar a última.
-- **Sessão rápida:** só escolha o projeto. Ela fica em um ambiente temporário até você fechar a
-  aba, e pode ser salva como ambiente a qualquer momento.
-- **Ambientes:** abas com layout e sessões próprios, criadas a partir de modelos ou de outros
-  ambientes salvos. Exporte um ambiente para um arquivo e compartilhe com o time.
+- **Sessão rápida:** só escolha o projeto. Ela abre um ambiente com o nome do projeto e a data,
+  que você renomeia com clique duplo na aba.
+- **Ambientes:** abas com layout e sessões próprios, com um ou vários projetos e quantas sessões
+  e terminais quiser em cada. Fechados continuam no histórico, com busca, e reabrem com as sessões.
+- **Templates:** moldes de ambiente, sem conversas. Exporte um template para um arquivo e
+  compartilhe com o time.
 - **Sessões em paralelo:** cada uma em um terminal real, com worktree Git opcional. Destaque
   uma e volte para a grade sem reiniciar nada.
 - **Layout livre:** arraste, divida e agrupe painéis. O layout volta quando você reabre o app.

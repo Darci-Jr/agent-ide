@@ -1,5 +1,3 @@
-export type TemplateId = 'multi' | 'think' | 'blank'
-
 export interface AdapterInfo {
   id: string
   label: string
@@ -12,6 +10,8 @@ export interface SessionSpec {
   adapterId: string
   title: string
   cwd: string
+  /** Projeto da sessão. Sem ele, o projeto principal do ambiente. */
+  projectId?: string
   /** Branch criada para a sessão, quando ela roda em uma worktree. */
   worktreeBranch?: string
   /** O agente já foi iniciado alguma vez; decide entre iniciar e retomar. */
@@ -48,6 +48,78 @@ export interface ClaudeUsage {
   fiveHour: UsageWindow | null
   sevenDay: UsageWindow | null
   updatedAt: number
+}
+
+/** Estado do Git da pasta de uma sessão, mostrado no rodapé. */
+export interface GitStatus {
+  /** Nome da branch, ou o commit curto quando não há branch. */
+  branch: string | null
+  detached: boolean
+  ahead: number
+  behind: number
+  upstream: boolean
+  /** Arquivos alterados, inclusive os novos. */
+  changed: number
+  /** Só os já versionados: são os que uma troca de branch poderia perder. */
+  tracked: number
+  root: string
+  /** Nome da worktree, quando a pasta é uma worktree ligada. */
+  worktree: string | null
+}
+
+export interface GitWorktree {
+  path: string
+  name: string
+  branch: string | null
+  /** A pasta principal do repositório. */
+  main: boolean
+  /** A worktree da sessão em uso. */
+  current: boolean
+}
+
+export type GitAction =
+  | { kind: 'switch'; branch: string }
+  | { kind: 'create'; branch: string }
+  | { kind: 'fetch' }
+  | { kind: 'pull' }
+  | { kind: 'push' }
+
+/** Um arquivo alterado em relação ao último commit, somando stage e não stage. */
+export interface GitChange {
+  /** Caminho a partir da raiz do repositório. */
+  path: string
+  /** Caminho antigo, quando o arquivo foi renomeado. */
+  from: string | null
+  status: 'modified' | 'added' | 'deleted' | 'renamed' | 'untracked'
+  additions: number
+  deletions: number
+  binary: boolean
+}
+
+export interface GitChanges {
+  root: string
+  branch: string | null
+  files: GitChange[]
+}
+
+export interface DiffLine {
+  type: 'add' | 'del' | 'ctx' | 'hunk'
+  oldNo: number | null
+  newNo: number | null
+  text: string
+}
+
+export interface FileDiff {
+  binary: boolean
+  /** Diff grande demais: só as primeiras linhas vieram. */
+  truncated: boolean
+  lines: DiffLine[]
+}
+
+/** Painel de alterações. Sem pasta (ambiente importado), usa a do ambiente. */
+export interface DiffPanelParams {
+  kind: 'diff'
+  cwd: string | null
 }
 
 /** Ícones que um comando pode usar. Os desenhos ficam em `renderer/src/icons.tsx`. */
@@ -120,10 +192,33 @@ export interface SessionContext {
   updatedAt: number
 }
 
+/** Atualização do app instalado. `disabled` em desenvolvimento e nos testes. */
+export interface UpdateState {
+  /** Versão em uso. */
+  version: string
+  status: 'disabled' | 'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'error'
+  /** Versão nova encontrada ou já baixada. */
+  available?: string
+  percent?: number
+  checkedAt?: number
+  error?: string
+}
+
+/** Cache do prompt da conversa: cada resposta renova o prazo. */
+export interface CacheInfo {
+  /** Última resposta que leu ou criou cache. */
+  lastAt: number
+  /** 5 minutos ou 1 hora. */
+  ttlMs: number
+  expiresAt: number
+}
+
 /** O que aparece no rodapé da IDE. Não muda nada no terminal. */
 export interface Preferences {
   showUsage: boolean
   showContext: boolean
+  showCache: boolean
+  showGit: boolean
 }
 
 /** O que estava aberto, para a IDE voltar como estava. `activeId` nulo é a tela inicial. */
@@ -150,33 +245,74 @@ export interface HistoryEntry {
   messages: number
 }
 
+/** Sessão rápida: um ambiente com uma sessão no projeto. */
 export interface CreateEnvironmentRequest {
   projectId: string
-  template: TemplateId
-  /** Usa um ambiente salvo como modelo, no lugar de `template`. */
-  fromEnvironmentId?: string
-  /** Sessão rápida: fica em Temporarios até ser salva. */
-  draft?: boolean
+}
+
+/** Quantas sessões de cada tipo abrir em um projeto. */
+export interface SessionGroup {
+  projectId: string
+  claude: number
+  terminals: number
+}
+
+/** Limite por projeto, para não abrir dezenas de processos por engano. */
+export const MAX_SESSIONS_PER_PROJECT = 8
+
+/** Uma sessão do molde. O layout do template se refere a ela pelo `slot`. */
+export interface TemplateSlot {
+  slot: string
+  projectId: string
+  adapterId: string
+  title: string
+}
+
+/** Molde de ambiente: projetos, sessões e layout, sem conversas. Não aparece nas abas. */
+export interface Template {
+  id: string
+  name: string
+  slots: TemplateSlot[]
+  /** Layout com `slot` no lugar dos ids de sessão; nulo arruma as sessões em grade. */
+  layout: unknown | null
+  updatedAt: number
+}
+
+export interface TemplateDraft {
+  name: string
+  groups: SessionGroup[]
+}
+
+/** Novo ambiente: cada grupo vira sessões já iniciadas. Com template e os mesmos grupos, usa o layout dele. */
+export interface NewEnvironmentRequest {
+  groups: SessionGroup[]
+  templateId?: string
 }
 
 export interface Environment {
   id: string
   name: string
+  /** Projeto principal. As sessões podem ser de outros projetos (`SessionSpec.projectId`). */
   projectId: string
-  /** Ambiente temporário, criado por uma sessão rápida. */
-  draft: boolean
+  /** Formato antigo: os temporários são apagados ao carregar. */
+  draft?: boolean
   lastOpenedAt: number
   cwd: string
-  template: TemplateId
   sessions: SessionSpec[]
   /** Layout serializado pelo dockview; opaco para o processo principal. */
   layout: unknown | null
+  /** Quando a aba foi fechada pela última vez; ordena o histórico de ambientes. */
+  closedAt?: number
+  /** Fixado: a aba fica no grupo da esquerda, inclusive ao reabrir. Não vai para o template. */
+  pinned?: boolean
 }
 
 /** Parâmetros dos painéis que não são terminais. O caminho é relativo ao projeto, se possível. */
 export interface FilePanelParams {
   kind: 'editor' | 'markdown'
   path: string | null
+  /** Pasta do projeto do arquivo, num ambiente com vários projetos. Sem ela, a do ambiente. */
+  root?: string | null
 }
 
 export interface TerminalPanelParams {
@@ -214,10 +350,16 @@ export interface ProtectionStatus {
 export interface CreateSessionRequest {
   environmentId: string
   adapterId: string
+  /** Projeto da nova sessão: o da sessão em uso. Sem ele, o principal do ambiente. */
+  projectId?: string
   /** Cria a sessão em uma worktree própria. Nome nulo gera um código aleatório. */
   worktree?: { name: string | null }
   /** Abre um terminal avulso na pasta desta sessão; sem ela, na pasta do ambiente. */
   terminalOfSessionId?: string
+  /** Abre o terminal nesta worktree do repositório do ambiente. */
+  terminalInWorktree?: string
+  /** Id de um comando salvo do projeto: o terminal novo o executa assim que o prompt aparece. */
+  runCommandId?: string
 }
 
 export interface CreateSessionResult {
@@ -234,7 +376,10 @@ export interface IdeApi {
   openProjectFolder(projectId: string): Promise<void>
 
   listProjects(): Promise<Project[]>
-  createProject(name: string): Promise<Project>
+  /** Cria `<parent>/<name>`; sem `parent`, pergunta onde. Nulo se a pessoa cancelar. */
+  createProject(name: string, parent?: string): Promise<Project | null>
+  /** Seletor de pasta para escolher onde criar um projeto; abre no último lugar usado. */
+  pickProjectParent(): Promise<string | null>
   addExistingProject(): Promise<Project | null>
   removeProject(id: string): Promise<void>
   listHistory(projectId: string): Promise<HistoryEntry[]>
@@ -242,18 +387,27 @@ export interface IdeApi {
 
   listEnvironments(): Promise<Environment[]>
   createEnvironment(req: CreateEnvironmentRequest): Promise<Environment>
+  newEnvironment(req: NewEnvironmentRequest): Promise<Environment>
+  renameEnvironment(id: string, name: string): Promise<void>
   markEnvironmentOpened(id: string): Promise<void>
   /** Devolve o ambiente atualizado, com as sessões que estavam rodando já retomadas. */
   resumeEnvironment(id: string): Promise<Environment>
   getOpenTabs(): Promise<OpenTabs>
   saveOpenTabs(tabs: OpenTabs): void
-  saveEnvironment(id: string, name: string): Promise<Environment>
   /** Fecha a aba e encerra as sessões; o ambiente continua salvo. */
   closeEnvironment(id: string): Promise<void>
+  pinEnvironment(id: string, pinned: boolean): Promise<void>
   deleteEnvironment(id: string): Promise<void>
   saveLayout(id: string, layout: unknown): void
-  exportEnvironment(id: string, layout: unknown): Promise<boolean>
-  importEnvironment(projectId: string): Promise<Environment | null>
+
+  listTemplates(): Promise<Template[]>
+  saveTemplate(draft: TemplateDraft, id?: string): Promise<Template>
+  /** Copia projetos, sessões e layout do ambiente, sem as conversas. */
+  saveTemplateFromEnvironment(environmentId: string, name: string, layout: unknown): Promise<Template>
+  deleteTemplate(id: string): Promise<void>
+  exportTemplate(id: string): Promise<boolean>
+  /** Projetos do arquivo são procurados pelo nome; os que faltam, a pessoa aponta a pasta. */
+  importTemplate(): Promise<Template | null>
 
   createSession(req: CreateSessionRequest): Promise<CreateSessionResult>
   startSession(environmentId: string, sessionId: string): Promise<void>
@@ -271,7 +425,28 @@ export interface IdeApi {
   getUsage(): Promise<ClaudeUsage | null>
   onUsage(cb: (usage: ClaudeUsage | null) => void): () => void
   getContext(sessionId: string): Promise<SessionContext | null>
+  /** Lido do transcript da sessão do Claude; nulo antes da primeira resposta. */
+  getCache(sessionId: string): Promise<CacheInfo | null>
   onContext(cb: (sessionId: string, context: SessionContext | null) => void): () => void
+  gitStatus(cwd: string): Promise<GitStatus | null>
+  gitBranches(cwd: string): Promise<string[]>
+  gitWorktrees(cwd: string): Promise<GitWorktree[]>
+  /** Devolve uma mensagem curta de sucesso. */
+  gitAction(cwd: string, action: GitAction): Promise<string>
+  removeWorktree(cwd: string, path: string): Promise<void>
+  openWorktreeFolder(cwd: string, path: string): Promise<void>
+  /** Alterações da pasta em relação ao último commit. Nulo se não for um repositório. */
+  gitChanges(cwd: string): Promise<GitChanges | null>
+  /** Só aceita um arquivo da lista de alterações. */
+  gitFileDiff(cwd: string, path: string): Promise<FileDiff>
+  /** Alguma ação de Git terminou: o rodapé relê o estado. */
+  onGitChanged(cb: () => void): () => void
+
+  getUpdate(): Promise<UpdateState>
+  checkUpdate(): Promise<UpdateState>
+  /** Reinicia na versão já baixada. */
+  installUpdate(): Promise<void>
+  onUpdate(cb: (state: UpdateState) => void): () => void
   /** Gerais e do projeto, nessa ordem. */
   listCommands(projectId: string): Promise<CustomCommand[]>
   saveCommand(projectId: string, draft: CommandDraft, id?: string): Promise<CustomCommand>

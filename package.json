@@ -1,8 +1,13 @@
 {
   "name": "agent-ide",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "IDE centrada em agentes de código, com ambientes de trabalho personalizáveis.",
+  "author": "Darci Jr",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Darci-Jr/agent-ide.git"
+  },
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -10,13 +15,16 @@
     "start": "electron-vite preview",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "e2e": "npm run build && node e2e/smoke.mjs"
+    "e2e": "npm run build && node e2e/smoke.mjs",
+    "dist": "npm run build && electron-builder --win --publish never",
+    "release": "npm run build && electron-builder --win --publish always"
   },
   "overrides": {
     "dompurify": "$dompurify"
   },
   "dependencies": {
-    "@lydell/node-pty": "^1.2.0-beta.18"
+    "@lydell/node-pty": "^1.2.0-beta.18",
+    "electron-updater": "^6.8.11"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
@@ -28,6 +36,7 @@
     "dockview-react": "^8.8.3",
     "dompurify": "^3.4.17",
     "electron": "^45.2.1",
+    "electron-builder": "^26.18.0",
     "electron-vite": "^6.0.0",
     "marked": "^18.1.2",
     "monaco-editor": "^0.57.0",

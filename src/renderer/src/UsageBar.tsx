@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { ClaudeUsage, SessionContext, UsageWindow } from '../../shared/types'
+import type { CacheInfo, ClaudeUsage, GitStatus, SessionContext, UsageWindow } from '../../shared/types'
 
 const BLOCKS = 5
 
@@ -39,13 +39,61 @@ function LimitMeter(props: { label: string; window: UsageWindow | null }): React
   return <Meter label={props.label} percent={w.usedPercentage} tip={`Renova ${time(w.resetsAt)}`} />
 }
 
-/** Rodapé da IDE: limites da conta e o contexto da sessão do Claude que está em uso. */
+const clock = (ms: number): string => new Date(ms).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
+
+/** Tempo até o cache vencer. Perto do fim fica em aviso: a próxima mensagem sairia mais cara. */
+function CacheState({ data }: { data: CacheInfo | null }): ReactNode {
+  if (!data) return <span className="usage-meter" data-tip="Aparece depois da primeira resposta">Cache —</span>
+  const left = data.expiresAt - Date.now()
+  if (left <= 0) {
+    return (
+      <span className="usage-meter critical" data-tip={`Venceu às ${clock(data.expiresAt)}`}>
+        Cache expirado
+      </span>
+    )
+  }
+  const warnAt = data.ttlMs >= 60 * 60 * 1000 ? 5 * 60 * 1000 : 60 * 1000
+  const text = left >= 60 * 1000 ? `${Math.floor(left / 60000)}min` : `${Math.ceil(left / 1000)}s`
+  return (
+    <span className={`usage-meter ${left <= warnAt ? 'warning' : ''}`} data-tip={`Vence às ${clock(data.expiresAt)}; cada resposta renova por ${data.ttlMs >= 3600000 ? '1 hora' : '5 minutos'}`}>
+      Cache {text}
+    </span>
+  )
+}
+
+/** Só o estado: as ações de Git ficam no ícone da barra lateral. */
+function GitState({ git }: { git: GitStatus }): ReactNode {
+  return (
+    <span className="git-state">
+      <span className="git-branch" data-tip={git.detached ? 'Sem branch: commit avulso' : git.root}>
+        ⑂ {git.branch}
+      </span>
+      {git.upstream && (
+        <span data-tip={`${git.ahead} à frente e ${git.behind} atrás do remoto, desde a última busca`}>
+          ↑{git.ahead} ↓{git.behind}
+        </span>
+      )}
+      {git.changed > 0 && (
+        <span className="git-dirty" data-tip={`${git.changed} ${git.changed === 1 ? 'arquivo alterado' : 'arquivos alterados'}`}>
+          ●{git.changed}
+        </span>
+      )}
+      {git.worktree && <span data-tip={git.root}>worktree: {git.worktree}</span>}
+    </span>
+  )
+}
+
+/** Rodapé da IDE: limites da conta, o contexto e o Git da sessão em uso. */
 export function UsageBar(props: {
   usage: ClaudeUsage | null
   /** Nulo quando não há sessão do Claude à vista. */
   context: { title: string; data: SessionContext | null } | null
   showUsage: boolean
   showContext: boolean
+  /** Nulo quando o cache está desligado ou não há sessão do Claude em uso. */
+  cache: { data: CacheInfo | null } | null
+  /** Nulo quando o Git está desligado ou a pasta não é um repositório. */
+  git: GitStatus | null
 }): ReactNode {
   // Redesenha a cada minuto para "renovado" não ficar parado.
   const [, setTick] = useState(0)
@@ -64,6 +112,8 @@ export function UsageBar(props: {
         </>
       )}
       {props.showContext && context && <Meter label="Contexto" percent={context.data?.usedPercentage ?? null} tip={contextTip} />}
+      {props.cache && <CacheState data={props.cache.data} />}
+      {props.git && <GitState git={props.git} />}
     </footer>
   )
 }

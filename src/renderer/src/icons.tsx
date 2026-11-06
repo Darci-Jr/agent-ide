@@ -16,6 +16,7 @@ const paths = {
   worktree: <path d="M6 3v12M6 15a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM18 3a3 3 0 1 0 0 6 3 3 0 0 0 0-6zM18 9a9 9 0 0 1-9 9" />,
   plus: <path d="M12 5v14M5 12h14" />,
   more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
+  git: <path d="M12 2.5l9.5 9.5-9.5 9.5L2.5 12zM9 8.5l3 3M12 11.5v4.5M12 11.5l3-3" />,
   play: <path d="M7 4l13 8-13 8z" />,
   flask: <path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3M7 15h10" />,
   hammer: <path d="M14 7l-9.5 9.5a2 2 0 0 0 3 3L17 10M12 5l4-2 5 5-2 4z" />,
@@ -25,8 +26,10 @@ const paths = {
   package: <path d="M12 3l8 4.5v9L12 21l-8-4.5v-9zM4 7.5l8 4.5 8-4.5M12 12v9M8 5.2l8 4.6" />,
   database: <path d="M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3zM4 6v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6M4 12c0 1.7 3.6 3 8 3s8-1.3 8-3" />,
   globe: <path d="M12 21a9 9 0 1 0 0-18 9 9 0 0 0 0 18zM3 12h18M12 3c2.5 2.5 3.5 5.5 3.5 9s-1 6.5-3.5 9c-2.5-2.5-3.5-5.5-3.5-9S9.5 5.5 12 3z" />,
+  commands: <path d="M13 2L4 14h7l-1 8 9-12h-7z" />,
   plugins: <path d="M9 4h6v3a2 2 0 1 0 0 0h4v5h-3a2 2 0 1 0 0 4h3v4H5v-4h3a2 2 0 1 0 0-4H5V7h4z" />,
   settings: <path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6zM19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z" />,
+  pin: <path d="M9 4h6l-1 6 4 4H6l4-4zM12 14v7" />,
   close: <path d="M6 6l12 12M18 6L6 18" />,
   check: <path d="M5 12l5 5L20 7" />,
   upload: <path d="M12 15V3M7 8l5-5 5 5M4 15v5h16v-5" />,
@@ -51,13 +54,15 @@ export function IconButton(props: {
   onClick?: () => void
   className?: string
   disabled?: boolean
+  /** Mostra o texto ao lado do ícone; aí a dica ao passar o mouse sai, porque repetiria o texto. */
+  withLabel?: boolean
 }): ReactNode {
   return (
     <button
       type="button"
       className={`icon ${props.className ?? ''}`}
       aria-label={props.label}
-      data-tip={props.label}
+      data-tip={props.withLabel ? undefined : props.label}
       disabled={props.disabled}
       // Dentro de uma aba, clicar no botão não pode iniciar um arraste.
       onPointerDown={(e) => e.stopPropagation()}
@@ -70,6 +75,7 @@ export function IconButton(props: {
       <svg viewBox="0 0 24 24" aria-hidden="true">
         {paths[props.icon]}
       </svg>
+      {props.withLabel && <span className="icon-label">{props.label}</span>}
     </button>
   )
 }

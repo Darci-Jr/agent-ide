@@ -8,6 +8,10 @@ const BUSY_WINDOW_MS = 2000
 const STARTUP_GRACE_MS = 5000
 /** Um Claude parado no prompt também solta saídas isoladas; trabalho é atividade contínua. */
 const SUSTAINED_ACTIVITY_MS = 4000
+/** Silêncio depois da saída inicial que indica o prompt pronto. */
+const INPUT_QUIET_MS = 400
+/** Sem saída nenhuma, digita assim mesmo depois disto. */
+const INPUT_FALLBACK_MS = 4000
 
 interface Live {
   pty: IPty
@@ -44,7 +48,11 @@ export class SessionManager {
     }
   }
 
-  async start(spec: SessionSpec): Promise<void> {
+  /**
+   * `input` é digitado quando a saída inicial para por um instante, ou seja, quando o
+   * prompt apareceu. Enviado antes, o shell poderia perdê-lo ainda carregando.
+   */
+  async start(spec: SessionSpec, input?: string): Promise<void> {
     if (this.live.has(spec.id)) return
     const { file, args } = await getAdapter(spec.adapterId).spawn({ sessionId: spec.id, started: spec.started, cwd: spec.cwd })
     const pty = spawn(file, args, {
@@ -57,9 +65,20 @@ export class SessionManager {
     const live: Live = { pty, lastOutput: Date.now(), startedAt: Date.now(), busySince: Date.now() }
     this.live.set(spec.id, live)
     this.states.set(spec.id, { id: spec.id, running: true, busy: true, working: false, startedAt: live.startedAt })
+    let pending = input
+    let inputTimer: NodeJS.Timeout | undefined
+    const typeInput = (): void => {
+      if (pending === undefined || this.live.get(spec.id) !== live) return
+      pty.write(pending)
+      pending = undefined
+    }
+    if (pending !== undefined) inputTimer = setTimeout(typeInput, INPUT_FALLBACK_MS)
     pty.onData((data) => {
       live.lastOutput = Date.now()
       this.events.data(spec.id, data)
+      if (pending === undefined) return
+      clearTimeout(inputTimer)
+      inputTimer = setTimeout(typeInput, INPUT_QUIET_MS)
     })
     pty.onExit(({ exitCode }) => {
       // Se a sessão já foi removida ou reiniciada, o evento é de um processo antigo.
