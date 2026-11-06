@@ -69,12 +69,21 @@ export function EnvironmentView(props: {
   // Altura do ícone Git quando o menu está aberto; nulo com ele fechado.
   const [gitMenuAt, setGitMenuAt] = useState<{ top: number; left: number } | null>(null)
   const gitButton = useRef<HTMLSpanElement>(null)
+  // Sessão em uso: arquivos, comandos, plugins e sessões novas seguem o projeto dela.
+  const [activeSessionId, setActiveSessionId] = useState('')
+  const activeSpec = env.sessions.find((s) => s.id === activeSessionId)
+  const projectId = activeSpec?.projectId ?? env.projectId
+  const projectCwd =
+    env.sessions.find((s) => (s.projectId ?? env.projectId) === projectId && !s.worktreeBranch)?.cwd ??
+    (projectId === env.projectId ? env.cwd : (activeSpec?.cwd ?? env.cwd))
+  const projectIdRef = useRef(projectId)
+  projectIdRef.current = projectId
   const [commands, setCommands] = useState<CustomCommand[]>([])
   useEffect(() => {
-    const load = (): void => void ide.listCommands(env.projectId).then(setCommands, () => setCommands([]))
+    const load = (): void => void ide.listCommands(projectId).then(setCommands, () => setCommands([]))
     load()
     return ide.onCommandsChanged(load)
-  }, [env.projectId])
+  }, [projectId])
   const [panelCount, setPanelCount] = useState(0)
   const envRef = useRef(env)
   envRef.current = env
@@ -120,7 +129,7 @@ export function EnvironmentView(props: {
     async (request: Omit<CreateSessionRequest, 'environmentId'>, takeFocus: boolean) => {
       const dock = apiRef.current
       if (!dock) return
-      const { session, missingInWorktree } = await ide.createSession({ ...request, environmentId: envRef.current.id })
+      const { session, missingInWorktree } = await ide.createSession({ projectId: projectIdRef.current, ...request, environmentId: envRef.current.id })
       const current = envRef.current
       onChange({ ...current, sessions: [...current.sessions, session] })
       if (dock.hasMaximizedGroup()) setFocus(null)
@@ -158,14 +167,14 @@ export function EnvironmentView(props: {
   const defaultAdapterRef = useRef(defaultAdapter)
   defaultAdapterRef.current = defaultAdapter
 
-  const openFile = useCallback((path: string, asEditor = false) => {
+  const openFile = useCallback((path: string, asEditor = false, root: string | null = null) => {
     const dock = apiRef.current
     if (!dock) return
     if (dock.hasMaximizedGroup()) setFocus(null)
     const kind = /\.md$/i.test(path) && !asEditor ? 'markdown' : 'editor'
     const same = dock.panels.find((p) => {
       const params = paramsOf(p)
-      return params.kind === kind && params.path === path
+      return params.kind === kind && params.path === path && (params.root ?? null) === root
     })
     if (same) {
       same.api.setActive()
@@ -178,7 +187,7 @@ export function EnvironmentView(props: {
         return params.kind === 'markdown' && !params.path
       })
       if (empty) {
-        empty.api.updateParameters({ kind: 'markdown', path })
+        empty.api.updateParameters({ kind: 'markdown', path, root })
         empty.api.setTitle(baseName(path))
         empty.api.setActive()
         return
@@ -189,7 +198,7 @@ export function EnvironmentView(props: {
       id: `file:${crypto.randomUUID()}`,
       component: kind,
       title: baseName(path),
-      params: { kind, path },
+      params: { kind, path, root },
       position: neighbour ? { referencePanel: neighbour.id, direction: 'within' } : placeInGrid(dock)
     })
   }, [setFocus])
@@ -283,11 +292,12 @@ export function EnvironmentView(props: {
       },
       commands,
       runCommand,
+      projectCwd,
       claudeSessions: props.claudeSessions,
       pluginsChangedAt: props.pluginsChangedAt,
       markPluginsChanged: props.onPluginsChanged
     }),
-    [closePanel, commands, runCommand, env, focusId, openFile, props.states, props.theme, props.claudeSessions, props.pluginsChangedAt, props.onPluginsChanged, setFocus, toast, updateSession]
+    [closePanel, commands, runCommand, projectCwd, env, focusId, openFile, props.states, props.theme, props.claudeSessions, props.pluginsChangedAt, props.onPluginsChanged, setFocus, toast, updateSession]
   )
 
   const onReady = (event: DockviewReadyEvent): void => {
@@ -310,6 +320,7 @@ export function EnvironmentView(props: {
       const params = dock.activePanel && paramsOf(dock.activePanel)
       if (params?.kind !== 'terminal') return
       lastSessionId.current = params.sessionId
+      setActiveSessionId(params.sessionId)
       onActiveSessionRef.current(params.sessionId)
     }
     rememberSession()
@@ -362,7 +373,7 @@ export function EnvironmentView(props: {
         </span>
         <IconButton withLabel={props.railExpanded} icon="plugins" label="Plugins" onClick={openPlugins} />
         <IconButton withLabel={props.railExpanded} icon="commands" label="Comandos" className={commandsOpen ? 'on' : ''} onClick={() => setCommandsOpen(true)} />
-        <IconButton withLabel={props.railExpanded} icon="openFolder" label="Abrir pasta do projeto" onClick={() => void ide.openProjectFolder(env.projectId)} />
+        <IconButton withLabel={props.railExpanded} icon="openFolder" label="Abrir pasta do projeto" onClick={() => void ide.openProjectFolder(projectId)} />
         <div className="rail-space" />
         <IconButton withLabel={props.railExpanded} icon="settings" label="Configurações" onClick={props.openSettings} />
         <IconButton withLabel={props.railExpanded} icon={props.theme === 'light' ? 'moon' : 'sun'} label={props.theme === 'light' ? 'Tema escuro' : 'Tema claro'} onClick={props.toggleTheme} />
@@ -390,17 +401,17 @@ export function EnvironmentView(props: {
         />
       )}
 
-      {commandsOpen && <CommandsDialog projectId={env.projectId} onClose={() => setCommandsOpen(false)} />}
+      {commandsOpen && <CommandsDialog projectId={projectId} onClose={() => setCommandsOpen(false)} />}
 
       {worktreeOpen && (
         <WorktreeDialog
-          folderName={baseName(env.cwd)}
+          folderName={baseName(projectCwd)}
           onCreate={(name) => placeNewSession({ adapterId: 'claude', worktree: { name } }, true)}
           onClose={() => setWorktreeOpen(false)}
         />
       )}
 
-      {filesOpen && <FileDrawer cwd={env.cwd} onOpen={openFile} />}
+      {filesOpen && <FileDrawer cwd={projectCwd} onOpen={(path, asEditor) => openFile(path, asEditor, projectCwd)} />}
 
       <EnvContext.Provider value={context}>
         <div className="workspace">

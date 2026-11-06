@@ -3,14 +3,14 @@ import { randomUUID } from 'node:crypto'
 import { existsSync, readFileSync, renameSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join, resolve } from 'node:path'
-import type { CreateEnvironmentRequest, CreateSessionRequest, Environment, HistoryEntry, OpenTabs, Preferences, SessionState, CommandDraft, GitAction } from '../shared/types'
+import type { CreateEnvironmentRequest, CreateSessionRequest, Environment, HistoryEntry, NewEnvironmentRequest, OpenTabs, Preferences, SessionSpec, SessionState, CommandDraft, GitAction, Template, TemplateDraft } from '../shared/types'
 import { adapterIds, listAdapters } from './adapters'
 import { setClaudeSettings } from './adapters/claude'
 import { CommandStore } from './commands'
 import { fileDiff, gitChanges, gitStatus, repositoryRoot, listBranches, listWorktrees, removeWorktree, requireWorktree, runGitAction } from './git'
 import { listPlugins, setPluginEnabled } from './plugins'
 import { UsageTracker } from './usage'
-import { exportEnvironment, importEnvironment } from './exchange'
+import { cleanGroups, cleanName, exportTemplate, groupsOf, instantiate, parseTemplateFile, sameGroups, slotsFromGroups, TemplateStore, templateFromEnvironment } from './templates'
 import { denyRead, getProtection, listConfigFiles, listTree, readProjectFile, writeProjectFile } from './files'
 import { listHistory } from './history'
 import { sessionCache } from './cache'
@@ -29,6 +29,7 @@ const TEST_EXCHANGE_FILE = process.env.AGENT_IDE_TEST_EXCHANGE_FILE
 let win: BrowserWindow | null = null
 let manager: SessionManager
 let store: EnvironmentStore | null = null
+let templates: TemplateStore | null = null
 let workspace: Workspace
 let usage: UsageTracker
 let commands: CommandStore
@@ -57,6 +58,7 @@ function requireStore(): EnvironmentStore {
 function useWorkspace(dir: string): void {
   workspace.choose(dir)
   store = new EnvironmentStore(dir)
+  templates = new TemplateStore(dir)
   migrateOldEnvironments()
 }
 
@@ -69,7 +71,7 @@ function migrateOldEnvironments(): void {
     for (const env of list) {
       if (!existsSync(env.cwd)) continue
       const project = workspace.addExisting(env.cwd)
-      store.add({ ...env, projectId: project.id, draft: false, lastOpenedAt: 0 })
+      store.add({ ...env, projectId: project.id, lastOpenedAt: 0 })
     }
     renameSync(old, `${old}.migrado`)
   } catch (err) {
@@ -96,6 +98,34 @@ function recordSessionStates(states: SessionState[]): void {
     }
   }
   if (changed) store.saveSoon()
+}
+
+function requireTemplates(): TemplateStore {
+  if (!templates) throw new Error('Escolha a pasta de trabalho primeiro.')
+  return templates
+}
+
+const projectName = (id: string): string => {
+  try {
+    return workspace.get(id).name
+  } catch {
+    return 'Projeto removido'
+  }
+}
+
+/** Projetos do ambiente: o principal e os das sessões. */
+const projectsOf = (env: Environment): string[] => [...new Set([env.projectId, ...env.sessions.map((s) => s.projectId ?? env.projectId)])]
+
+const dateLabel = (): string => new Date().toLocaleString('pt-BR', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }).replace(',', '')
+
+/** Inicia as sessões de um ambiente novo; cada uma é marcada como já iniciada, como em session:create. */
+async function startNew(sessions: SessionSpec[]): Promise<void> {
+  await Promise.all(
+    sessions.map(async (s) => {
+      await manager.start({ ...s, started: false }).catch((err) => console.error(`Sessão não iniciada: ${s.id}`, err))
+      s.started = true
+    })
+  )
 }
 
 function uniqueName(base: string): string {
@@ -140,11 +170,15 @@ function registerIpc(): void {
   ipcMain.handle('project:open', (_e, id: string) => shell.openPath(workspace.get(id).path))
 
   ipcMain.handle('project:list', () => workspace.projects())
-  ipcMain.handle('project:create', async (_e, name: string) => {
+  ipcMain.handle('project:create', async (_e, name: string, parent?: string) => {
     const clean = validateProjectName(name)
-    const parent = TEST_PROJECT_PARENT ?? (await pickDirectory(`Onde criar "${clean}"?`, workspace.lastProjectParent ?? app.getPath('documents')))
-    return parent ? workspace.createProject(parent, clean) : null
+    const where =
+      typeof parent === 'string' && parent ? parent : TEST_PROJECT_PARENT ?? (await pickDirectory(`Onde criar "${clean}"?`, workspace.lastProjectParent ?? app.getPath('documents')))
+    return where ? workspace.createProject(where, clean) : null
   })
+  ipcMain.handle('project:pick-parent', async () =>
+    TEST_PROJECT_PARENT ?? (await pickDirectory('Onde criar a pasta nova?', workspace.lastProjectParent ?? app.getPath('documents')))
+  )
   ipcMain.handle('project:add', async () => {
     const dir = TEST_DIRECTORY ?? (await pickDirectory('Escolha a pasta do projeto'))
     return dir ? workspace.addExisting(dir) : null
@@ -157,9 +191,8 @@ function registerIpc(): void {
     const session = { id: entry.sessionId, adapterId: 'claude', title: entry.title, cwd: entry.cwd, started: true }
     const env: Environment = {
       id: randomUUID(),
-      name: 'Sem título',
+      name: uniqueName(`${project.name} ${dateLabel()}`),
       projectId,
-      draft: true,
       lastOpenedAt: Date.now(),
       cwd: project.path,
       sessions: [session],
@@ -172,26 +205,107 @@ function registerIpc(): void {
   })
 
   ipcMain.handle('env:list', () => store?.all() ?? [])
+  // Sessão rápida: o renderer abre a primeira sessão ao montar o ambiente vazio.
   ipcMain.handle('env:create', (_e, req: CreateEnvironmentRequest) => {
     const project = workspace.get(req.projectId)
-    const source = req.fromEnvironmentId ? requireStore().get(req.fromEnvironmentId) : null
-    const env: Environment = source
-      ? // Reaproveita a exportação: leva o layout, sem conversas nem dados locais.
-        importEnvironment(exportEnvironment(source, source.layout), project.path, project.id, adapterIds())
-      : {
-          id: randomUUID(),
-          name: '',
-          projectId: project.id,
-          draft: req.draft ?? false,
-          lastOpenedAt: Date.now(),
-          cwd: project.path,
-          sessions: [],
-          layout: null
-        }
-    env.name = env.draft ? 'Sem título' : uniqueName(source ? source.name : project.name)
+    const env: Environment = {
+      id: randomUUID(),
+      name: uniqueName(`${project.name} ${dateLabel()}`),
+      projectId: project.id,
+      lastOpenedAt: Date.now(),
+      cwd: project.path,
+      sessions: [],
+      layout: null
+    }
     requireStore().add(env)
     workspace.touch(project.id)
     return env
+  })
+  ipcMain.handle('env:new', async (_e, req: NewEnvironmentRequest) => {
+    const groups = cleanGroups(req?.groups, workspace.projects().map((p) => p.id))
+    const template = req.templateId ? requireTemplates().get(req.templateId) : null
+    // O layout do template só serve se as sessões pedidas são as mesmas dele.
+    const fromTemplate = template && sameGroups(groupsOf(template.slots), groups) ? template : null
+    const slots = fromTemplate ? fromTemplate.slots : slotsFromGroups(groups, projectName)
+    const { sessions, layout } = instantiate(slots, fromTemplate?.layout ?? null, (id) => workspace.get(id).path)
+    const main = workspace.get(groups[0]!.projectId)
+    const base = template ? template.name : groups.map((g) => projectName(g.projectId)).join(' + ')
+    const env: Environment = { id: randomUUID(), name: uniqueName(base), projectId: main.id, lastOpenedAt: Date.now(), cwd: main.path, sessions, layout }
+    requireStore().add(env)
+    for (const g of groups) workspace.touch(g.projectId)
+    await startNew(sessions)
+    requireStore().flush()
+    return env
+  })
+  ipcMain.handle('env:rename', (_e, id: string, name: string) => {
+    const clean = String(name ?? '').trim().slice(0, 80)
+    if (!clean) throw new Error('Dê um nome ao ambiente.')
+    requireStore().get(id).name = clean
+    requireStore().flush()
+  })
+
+  ipcMain.handle('template:list', () => templates?.list() ?? [])
+  ipcMain.handle('template:save', (_e, draft: TemplateDraft, id?: string) => {
+    const groups = cleanGroups(draft?.groups, workspace.projects().map((p) => p.id))
+    const old = id ? requireTemplates().get(id) : null
+    // Mesmas sessões: guarda o layout; senão as sessões voltam a ficar em grade.
+    const keep = old && sameGroups(groupsOf(old.slots), groups)
+    const template: Template = {
+      id: old?.id ?? randomUUID(),
+      name: cleanName(draft.name),
+      slots: keep ? old.slots : slotsFromGroups(groups, projectName),
+      layout: keep ? old.layout : null,
+      updatedAt: Date.now()
+    }
+    return requireTemplates().save(template)
+  })
+  ipcMain.handle('template:from-env', (_e, envId: string, name: string, layout: unknown) =>
+    requireTemplates().save(templateFromEnvironment(requireStore().get(envId), name, layout))
+  )
+  ipcMain.handle('template:delete', (_e, id: string) => requireTemplates().remove(id))
+  ipcMain.handle('template:export', async (_e, id: string) => {
+    const template = requireTemplates().get(id)
+    const target =
+      TEST_EXCHANGE_FILE ??
+      (await dialog.showSaveDialog(win!, {
+        title: 'Exportar template',
+        defaultPath: `${template.name}.template.json`,
+        filters: [{ name: 'Template', extensions: ['json'] }]
+      })).filePath
+    if (!target) return false
+    await writeFile(target, exportTemplate(template, projectName), 'utf8')
+    return true
+  })
+  ipcMain.handle('template:import', async () => {
+    const source =
+      TEST_EXCHANGE_FILE ??
+      (await dialog.showOpenDialog(win!, {
+        title: 'Importar template',
+        filters: [{ name: 'Template', extensions: ['json'] }],
+        properties: ['openFile']
+      })).filePaths[0]
+    if (!source) return null
+    const parsed = parseTemplateFile(await readFile(source, 'utf8'), adapterIds())
+    // Projetos pelo nome; os que não existem aqui, a pessoa aponta a pasta.
+    const ids: string[] = []
+    for (const name of parsed.projects) {
+      const known = workspace.projects().find((p) => p.name.toLowerCase() === name.toLowerCase())
+      if (known) {
+        ids.push(known.id)
+        continue
+      }
+      const dir = TEST_DIRECTORY ?? (await pickDirectory(`Onde está o projeto "${name}" deste template?`))
+      if (!dir) return null
+      ids.push(workspace.addExisting(dir).id)
+    }
+    const template: Template = {
+      id: randomUUID(),
+      name: parsed.name,
+      slots: parsed.slots.map((s) => ({ slot: s.slot, projectId: ids[s.project]!, adapterId: s.adapterId, title: s.title })),
+      layout: parsed.layout,
+      updatedAt: Date.now()
+    }
+    return requireTemplates().save(template)
   })
   ipcMain.handle('env:opened', (_e, id: string) => {
     const env = requireStore().get(id)
@@ -208,15 +322,6 @@ function registerIpc(): void {
   })
   ipcMain.handle('tabs:get', () => workspace.tabs())
   ipcMain.on('tabs:save', (_e, tabs: OpenTabs) => workspace.saveTabs(tabs))
-  ipcMain.handle('env:save', (_e, id: string, name: string) => {
-    const env = requireStore().get(id)
-    const clean = name.trim()
-    if (!clean) throw new Error('Dê um nome ao ambiente.')
-    env.name = clean
-    env.draft = false
-    requireStore().flush()
-    return env
-  })
   ipcMain.handle('env:pin', (_e, id: string, pinned: boolean) => {
     requireStore().get(id).pinned = pinned === true
     requireStore().flush()
@@ -241,52 +346,27 @@ function registerIpc(): void {
     requireStore().get(id).layout = layout
     requireStore().saveSoon()
   })
-  ipcMain.handle('env:export', async (_e, id: string, layout: unknown) => {
-    const env = requireStore().get(id)
-    const target =
-      TEST_EXCHANGE_FILE ??
-      (await dialog.showSaveDialog(win!, {
-        title: 'Exportar ambiente',
-        defaultPath: `${env.name}.ambiente.json`,
-        filters: [{ name: 'Ambiente', extensions: ['json'] }]
-      })).filePath
-    if (!target) return false
-    await writeFile(target, exportEnvironment(env, layout), 'utf8')
-    return true
-  })
-  ipcMain.handle('env:import', async (_e, projectId: string) => {
-    const project = workspace.get(projectId)
-    const source =
-      TEST_EXCHANGE_FILE ??
-      (await dialog.showOpenDialog(win!, {
-        title: 'Importar ambiente',
-        filters: [{ name: 'Ambiente', extensions: ['json'] }],
-        properties: ['openFile']
-      })).filePaths[0]
-    if (!source) return null
-    const env = importEnvironment(await readFile(source, 'utf8'), project.path, project.id, adapterIds())
-    env.name = uniqueName(env.name)
-    requireStore().add(env)
-    workspace.touch(project.id)
-    return env
-  })
-
   ipcMain.handle('session:create', async (_e, req: CreateSessionRequest) => {
     const env = requireStore().get(req.environmentId)
     const id = randomUUID()
-    const worktree = req.worktree ? await createWorktree(env.cwd, id, req.worktree.name) : null
-    const number = env.sessions.length + 1
     const origin = env.sessions.find((s) => s.id === req.terminalOfSessionId)
-    // Só uma worktree que o Git lista para o repositório do ambiente.
-    const inWorktree = req.terminalInWorktree ? (await requireWorktree(env.cwd, req.terminalInWorktree)).path : null
-    // Só comandos salvos para o projeto do ambiente; o renderer não manda texto para executar.
-    const command = req.runCommandId ? commands.list(env.projectId).find((c) => c.id === req.runCommandId) : undefined
+    // Projeto da sessão em uso; só vale um dos projetos do ambiente.
+    const projectId = origin?.projectId ?? req.projectId ?? env.projectId
+    if (!projectsOf(env).includes(projectId)) throw new Error('Projeto fora deste ambiente.')
+    const project = workspace.get(projectId)
+    const worktree = req.worktree ? await createWorktree(project.path, id, req.worktree.name) : null
+    const number = env.sessions.length + 1
+    // Só uma worktree que o Git lista para o repositório do projeto.
+    const inWorktree = req.terminalInWorktree ? (await requireWorktree(project.path, req.terminalInWorktree)).path : null
+    // Só comandos salvos para o projeto; o renderer não manda texto para executar.
+    const command = req.runCommandId ? commands.list(projectId).find((c) => c.id === req.runCommandId) : undefined
     if (req.runCommandId && (!command || req.adapterId !== 'shell')) throw new Error('Comando não encontrado.')
     const session = {
       id,
       adapterId: req.adapterId,
       title: worktree?.name ?? (command ? command.name || command.command : `${req.adapterId === 'shell' ? 'Terminal' : 'Sessão'} ${number}`),
-      cwd: worktree?.path ?? inWorktree ?? origin?.cwd ?? env.cwd,
+      cwd: worktree?.path ?? inWorktree ?? origin?.cwd ?? project.path,
+      projectId,
       worktreeBranch: worktree?.branch,
       started: true
     }

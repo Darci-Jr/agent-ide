@@ -20,7 +20,10 @@ export interface EnvContextValue {
   markPluginsChanged(): void
   /** Abre um terminal novo na pasta da sessão em uso e executa o comando nele. */
   runCommand(command: CustomCommand): void
-  openFile(path: string, asEditor?: boolean): void
+  /** `root`: pasta do projeto do arquivo; sem ela, a do ambiente. */
+  openFile(path: string, asEditor?: boolean, root?: string | null): void
+  /** Pasta do projeto da sessão em uso. */
+  projectCwd: string
   setDirty(panelId: string, dirty: boolean): void
   toast(message: string): void
 }

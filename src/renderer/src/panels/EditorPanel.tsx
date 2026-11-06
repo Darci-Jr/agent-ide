@@ -9,6 +9,7 @@ import { languageOf, monaco } from '../monaco'
 export function EditorPanel({ params, api }: IDockviewPanelProps<FilePanelParams>): ReactNode {
   const { env, theme, setDirty, toast } = useEnv()
   const { path } = params
+  const cwd = params.root ?? env.cwd
   const host = useRef<HTMLDivElement>(null)
   const editor = useRef<monaco.editor.IStandaloneCodeEditor | null>(null)
   const mtime = useRef<number | null>(null)
@@ -29,7 +30,7 @@ export function EditorPanel({ params, api }: IDockviewPanelProps<FilePanelParams
   const load = useCallback(async () => {
     if (!path) return
     try {
-      const file = await ide.readFile(env.cwd, path)
+      const file = await ide.readFile(cwd, path)
       mtime.current = file.mtimeMs
       editor.current?.getModel()?.setValue(file.content)
       markDirty(false)
@@ -38,13 +39,13 @@ export function EditorPanel({ params, api }: IDockviewPanelProps<FilePanelParams
     } catch (err) {
       setError(errorMessage(err))
     }
-  }, [env.cwd, markDirty, path])
+  }, [cwd, markDirty, path])
 
   const save = useCallback(
     async (force = false) => {
       if (!path || !editor.current) return
       try {
-        const result = await ide.writeFile(env.cwd, path, editor.current.getValue(), force ? null : mtime.current)
+        const result = await ide.writeFile(cwd, path, editor.current.getValue(), force ? null : mtime.current)
         if (result.status === 'conflict') {
           setConflict(true)
           return
@@ -56,7 +57,7 @@ export function EditorPanel({ params, api }: IDockviewPanelProps<FilePanelParams
         toast(errorMessage(err))
       }
     },
-    [env.cwd, markDirty, path, toast]
+    [cwd, markDirty, path, toast]
   )
   saveRef.current = save
 
@@ -96,14 +97,14 @@ export function EditorPanel({ params, api }: IDockviewPanelProps<FilePanelParams
   }, [theme])
 
   useEffect(() => {
-    if (path) void ide.getProtection(env.cwd, path).then(setProtection, () => setProtection(null))
-  }, [env.cwd, path])
+    if (path) void ide.getProtection(cwd, path).then(setProtection, () => setProtection(null))
+  }, [cwd, path])
 
   const block = async (): Promise<void> => {
     if (!path) return
     try {
-      await ide.denyRead(env.cwd, path)
-      setProtection(await ide.getProtection(env.cwd, path))
+      await ide.denyRead(cwd, path)
+      setProtection(await ide.getProtection(cwd, path))
     } catch (err) {
       toast(errorMessage(err))
     }

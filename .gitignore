@@ -6,6 +6,7 @@ e2e/*.png
 
 # Dados de uso, quando a pasta de trabalho da IDE é este repositório
 /Ambientes/
+/Templates/
 /Temporarios/
 /Projetos/
 /projetos.json

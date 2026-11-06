@@ -12,6 +12,7 @@ const POLL_MS = 1000
 export function MarkdownPanel({ params }: IDockviewPanelProps<FilePanelParams>): ReactNode {
   const { env, openFile } = useEnv()
   const { path } = params
+  const cwd = params.root ?? env.cwd
   const [content, setContent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [options, setOptions] = useState<string[]>([])
@@ -23,7 +24,7 @@ export function MarkdownPanel({ params }: IDockviewPanelProps<FilePanelParams>):
     let alive = true
     const poll = async (): Promise<void> => {
       try {
-        const file = await ide.readFile(env.cwd, path)
+        const file = await ide.readFile(cwd, path)
         if (alive && file.mtimeMs !== last) {
           last = file.mtimeMs
           setContent(file.content)
@@ -39,14 +40,14 @@ export function MarkdownPanel({ params }: IDockviewPanelProps<FilePanelParams>):
       alive = false
       clearInterval(timer)
     }
-  }, [env.cwd, path])
+  }, [cwd, path])
 
   useEffect(() => {
     if (path) return
-    void ide.listTree(env.cwd).then((tree) => {
+    void ide.listTree(cwd).then((tree) => {
       setOptions(tree.filter((e) => !e.isDir && /\.md$/i.test(e.path)).map((e) => e.path).slice(0, 200))
     })
-  }, [env.cwd, path])
+  }, [cwd, path])
 
   const html = useMemo(
     () => (content === null ? '' : DOMPurify.sanitize(marked.parse(content, { async: false }))),
@@ -86,7 +87,7 @@ export function MarkdownPanel({ params }: IDockviewPanelProps<FilePanelParams>):
     <div className="file-panel">
       <div className="file-head">
         <span className="file-path">{path}</span>
-        <IconButton icon="pencil" label="Editar" onClick={() => openFile(path, true)} />
+        <IconButton icon="pencil" label="Editar" onClick={() => openFile(path, true, params.root ?? null)} />
       </div>
       {error && <div className="banner warning">{error}</div>}
       <article className="markdown" onClick={onClick} dangerouslySetInnerHTML={{ __html: html }} />

@@ -3,7 +3,7 @@
 ## Onde ficam os dados
 
 - `userData/config.json`: guarda o caminho da pasta de trabalho e o último lugar onde um projeto foi criado. Ao lado ficam `preferencias.json`, `uso-claude.json`, `comandos.json` (comandos gerais) e os arquivos da linha de status (`statusline.cjs`, `claude-settings/`).
-- Pasta de trabalho: `Ambientes/` (um JSON por ambiente salvo), `Temporarios/` (rascunhos), `projetos.json`, `abas.json` (abas abertas) e `comandos.json` (comandos por projeto). Comandos nunca ficam no repositório: um projeto baixado não pode trazer botões que executam algo.
+- Pasta de trabalho: `Ambientes/` (um JSON por ambiente), `Templates/` (um JSON por template), `projetos.json`, `abas.json` (abas abertas) e `comandos.json` (comandos por projeto). Comandos nunca ficam no repositório: um projeto baixado não pode trazer botões que executam algo.
 
 Quem instala ou testa o app usa perfil próprio: nos testes, defina `AGENT_IDE_USER_DATA`. Os diálogos são substituídos por `AGENT_IDE_TEST_WORKSPACE`, `AGENT_IDE_TEST_DIRECTORY`, `AGENT_IDE_TEST_PROJECT_PARENT` e `AGENT_IDE_TEST_EXCHANGE_FILE`. `AGENT_IDE_TEST_PLUGIN_CLI` troca o `claude plugin` por `e2e/fake-claude-plugins.cjs`: o e2e nunca deve mexer nos plugins de verdade.
 
@@ -12,8 +12,9 @@ Quem instala ou testa o app usa perfil próprio: nos testes, defina `AGENT_IDE_U
 - **Arquivos:** toda leitura e escrita passa por `resolveAllowed` em `files.ts`, que limita ao projeto e a `~/.claude`, mesmo com symlinks.
 - **Segredos:** nada de cópias, histórico ou telemetria com o conteúdo de arquivos. Gravações usam `writeAtomic`, que não deixa temporários.
 - **Salvar:** respeite `expectedMtimeMs` para nunca sobrescrever uma mudança do agente sem avisar.
-- **Importar ambientes:** o arquivo não é confiável. `exchange.ts` aceita só agentes conhecidos, nunca comandos, recusa caminhos fora do projeto, e nenhuma sessão inicia ao importar.
-- **Exportar ambientes:** não pode levar caminhos da máquina, ids de sessão, conversas nem conteúdo de arquivos. Campo novo em `Environment` ou nos painéis: confira `exportEnvironment` e os testes.
+- **Importar templates:** o arquivo não é confiável. `parseTemplateFile` aceita só agentes conhecidos, nunca comandos, e recusa caminhos fora do projeto. Projetos vêm pelo nome; os que faltam, a pessoa aponta a pasta.
+- **Templates:** não podem levar caminhos da máquina, ids de sessão, conversas nem conteúdo de arquivos. Campo novo em `Environment`, nas sessões ou nos painéis: confira `templateLayout` (`exchange.ts`), `templateFromEnvironment` e os testes.
+- **Temporários:** não existem mais. `EnvironmentStore` apaga os de versões anteriores (`Temporarios/` e `draft: true`) ao carregar.
 - **Regra de `deny`:** bloqueia `Read` e foi negada também para `cat`, mas outras formas de ler o arquivo não foram testadas. Não a apresente como garantia absoluta.
 - **Comandos personalizados:** o renderer só manda o id (`runCommandId`); o texto vem do `CommandStore` do projeto do ambiente.
 - **Worktrees:** nunca apague automaticamente, e nunca copie `.env` para elas; só avise.

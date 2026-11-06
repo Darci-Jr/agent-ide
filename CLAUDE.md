@@ -58,13 +58,16 @@ Um novo canal de IPC passa por três arquivos: `shared/types.ts`, `preload/index
 - A pasta de trabalho é escolhida uma única vez e guarda só os dados da IDE. Escolher uma pasta dentro de um repositório Git só gera um aviso.
 - Projeto novo nunca vai para dentro da pasta de trabalho: a pessoa dá o nome e escolhe onde criar, e o seletor abre no último lugar usado.
 - A IDE volta como estava: as mesmas abas, o mesmo layout e a mesma aba ativa, inclusive depois de uma queda. Sem abas abertas, abre na tela inicial, que oferece Retomar o último ambiente.
-- Sessões que rodavam são retomadas sozinhas, mas sem continuar a tarefa. Importados e modelos nunca iniciam sozinhos.
+- Sessões que rodavam são retomadas sozinhas, mas sem continuar a tarefa. Ambiente novo, inclusive de template, já abre com as sessões iniciadas.
 - Sessão que trabalhava quando foi encerrada mostra "Atenção" até a pessoa digitar nela ou dispensar.
-- O + logo após as abas de ambiente leva direto a "Criar ambiente em qual projeto?".
-- Abas de ambiente se reordenam arrastando. Fixadas (alfinete) ficam sempre à esquerda; arrastar não cruza entre fixadas e demais. O fixado fica no ambiente e não vai na exportação.
-- Criar ambiente não tem modelos de exemplo: abre salvo, com uma sessão. A única escolha é copiar o layout de um ambiente salvo, e sem nenhum salvo a tela é pulada.
+- O + logo após as abas de ambiente leva direto ao Novo ambiente.
+- Abas de ambiente se reordenam arrastando. Fixadas (alfinete) ficam sempre à esquerda; arrastar não cruza entre fixadas e demais. O fixado fica no ambiente e não vai para o template.
+- Template é o molde (projetos, quantas sessões e terminais, layout, sem conversas) e não aparece nas abas; ambiente é onde se trabalha. Templates são criados pela tela de Templates, pelo Novo ambiente ou a partir de um ambiente aberto, e só eles são exportados e importados, com os projetos pelo nome.
+- Novo ambiente: vários projetos, cada um com quantas sessões do Claude e terminais quiser (até 8 de cada), e pastas novas, cada uma com nome e local próprios, que viram projetos vazios. No topo ficam os templates salvos: um clique abre o ambiente na hora, e o ajuste preenche a tabela com as quantidades dele.
+- Não há ambiente temporário: todo ambiente é salvo. A sessão rápida vira um ambiente com o nome do projeto e a data, e qualquer ambiente é renomeado com clique duplo na aba.
+- Num ambiente com vários projetos, arquivos, comandos, plugins, Git e sessões novas seguem o projeto da sessão em uso.
 - Fechar uma aba não apaga o ambiente; apagar é uma ação separada. O Histórico de ambientes, na tela inicial, lista abertos e fechados com busca por ambiente, projeto ou sessão, e reabrir retoma as sessões que estavam abertas ao fechar.
-- Fechar sessão ou terminal é direto, sem confirmação. Fechar um ambiente sempre pede confirmação; o temporário pergunta se salva ou descarta.
+- Fechar sessão ou terminal é direto, sem confirmação. Fechar um ambiente sempre pede confirmação.
 - A barra lateral tem ações separadas: nova sessão, terminal na pasta da sessão atual, sessão do Claude em worktree, Git, Plugins e Comandos. Não há menu de opções. Configurações ficam no pé da barra e só tratam do rodapé. Clicar em Visão geral expande ou recolhe a barra: expandida mostra o nome ao lado de cada ícone e não mostra dica; recolhida mostra a dica.
 - O rodapé só mostra estado, nunca tem ações: uso do Claude (5h e semana), contexto e tempo até o cache vencer da sessão do Claude em uso e, à direita, o Git da sessão em uso. Sem textos explicativos. Cada indicador tem sua opção nas configurações, e nenhuma muda algo nas sessões.
 - Ações de Git ficam no ícone Git da barra lateral e nunca forçam: trocar de branch é recusado com alterações versionadas, pull é só `--ff-only`, push não força e remover worktree pede confirmação e recusa uma em uso.

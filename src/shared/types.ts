@@ -10,6 +10,8 @@ export interface SessionSpec {
   adapterId: string
   title: string
   cwd: string
+  /** Projeto da sessão. Sem ele, o projeto principal do ambiente. */
+  projectId?: string
   /** Branch criada para a sessão, quando ela roda em uma worktree. */
   worktreeBranch?: string
   /** O agente já foi iniciado alguma vez; decide entre iniciar e retomar. */
@@ -231,20 +233,57 @@ export interface HistoryEntry {
   messages: number
 }
 
+/** Sessão rápida: um ambiente com uma sessão no projeto. */
 export interface CreateEnvironmentRequest {
   projectId: string
-  /** Copia o layout de um ambiente salvo, sem as conversas. */
-  fromEnvironmentId?: string
-  /** Sessão rápida: fica em Temporarios até ser salva. */
-  draft?: boolean
+}
+
+/** Quantas sessões de cada tipo abrir em um projeto. */
+export interface SessionGroup {
+  projectId: string
+  claude: number
+  terminals: number
+}
+
+/** Limite por projeto, para não abrir dezenas de processos por engano. */
+export const MAX_SESSIONS_PER_PROJECT = 8
+
+/** Uma sessão do molde. O layout do template se refere a ela pelo `slot`. */
+export interface TemplateSlot {
+  slot: string
+  projectId: string
+  adapterId: string
+  title: string
+}
+
+/** Molde de ambiente: projetos, sessões e layout, sem conversas. Não aparece nas abas. */
+export interface Template {
+  id: string
+  name: string
+  slots: TemplateSlot[]
+  /** Layout com `slot` no lugar dos ids de sessão; nulo arruma as sessões em grade. */
+  layout: unknown | null
+  updatedAt: number
+}
+
+export interface TemplateDraft {
+  name: string
+  groups: SessionGroup[]
+}
+
+/** Novo ambiente: cada grupo vira sessões já iniciadas. Com template e os mesmos grupos, usa o layout dele. */
+export interface NewEnvironmentRequest {
+  groups: SessionGroup[]
+  templateId?: string
 }
 
 export interface Environment {
   id: string
   name: string
+  /** Projeto principal. As sessões podem ser de outros projetos (`SessionSpec.projectId`). */
   projectId: string
-  /** Ambiente temporário, criado por uma sessão rápida. */
-  draft: boolean
+  /** Formato antigo: os temporários são apagados ao carregar. */
+  draft?: boolean
   lastOpenedAt: number
   cwd: string
   sessions: SessionSpec[]
@@ -252,7 +291,7 @@ export interface Environment {
   layout: unknown | null
   /** Quando a aba foi fechada pela última vez; ordena o histórico de ambientes. */
   closedAt?: number
-  /** Fixado: a aba fica no grupo da esquerda, inclusive ao reabrir. Não vai na exportação. */
+  /** Fixado: a aba fica no grupo da esquerda, inclusive ao reabrir. Não vai para o template. */
   pinned?: boolean
 }
 
@@ -260,6 +299,8 @@ export interface Environment {
 export interface FilePanelParams {
   kind: 'editor' | 'markdown'
   path: string | null
+  /** Pasta do projeto do arquivo, num ambiente com vários projetos. Sem ela, a do ambiente. */
+  root?: string | null
 }
 
 export interface TerminalPanelParams {
@@ -297,6 +338,8 @@ export interface ProtectionStatus {
 export interface CreateSessionRequest {
   environmentId: string
   adapterId: string
+  /** Projeto da nova sessão: o da sessão em uso. Sem ele, o principal do ambiente. */
+  projectId?: string
   /** Cria a sessão em uma worktree própria. Nome nulo gera um código aleatório. */
   worktree?: { name: string | null }
   /** Abre um terminal avulso na pasta desta sessão; sem ela, na pasta do ambiente. */
@@ -321,8 +364,10 @@ export interface IdeApi {
   openProjectFolder(projectId: string): Promise<void>
 
   listProjects(): Promise<Project[]>
-  /** Pergunta onde criar a pasta; nulo se a pessoa cancelar. */
-  createProject(name: string): Promise<Project | null>
+  /** Cria `<parent>/<name>`; sem `parent`, pergunta onde. Nulo se a pessoa cancelar. */
+  createProject(name: string, parent?: string): Promise<Project | null>
+  /** Seletor de pasta para escolher onde criar um projeto; abre no último lugar usado. */
+  pickProjectParent(): Promise<string | null>
   addExistingProject(): Promise<Project | null>
   removeProject(id: string): Promise<void>
   listHistory(projectId: string): Promise<HistoryEntry[]>
@@ -330,19 +375,27 @@ export interface IdeApi {
 
   listEnvironments(): Promise<Environment[]>
   createEnvironment(req: CreateEnvironmentRequest): Promise<Environment>
+  newEnvironment(req: NewEnvironmentRequest): Promise<Environment>
+  renameEnvironment(id: string, name: string): Promise<void>
   markEnvironmentOpened(id: string): Promise<void>
   /** Devolve o ambiente atualizado, com as sessões que estavam rodando já retomadas. */
   resumeEnvironment(id: string): Promise<Environment>
   getOpenTabs(): Promise<OpenTabs>
   saveOpenTabs(tabs: OpenTabs): void
-  saveEnvironment(id: string, name: string): Promise<Environment>
   /** Fecha a aba e encerra as sessões; o ambiente continua salvo. */
   closeEnvironment(id: string): Promise<void>
   pinEnvironment(id: string, pinned: boolean): Promise<void>
   deleteEnvironment(id: string): Promise<void>
   saveLayout(id: string, layout: unknown): void
-  exportEnvironment(id: string, layout: unknown): Promise<boolean>
-  importEnvironment(projectId: string): Promise<Environment | null>
+
+  listTemplates(): Promise<Template[]>
+  saveTemplate(draft: TemplateDraft, id?: string): Promise<Template>
+  /** Copia projetos, sessões e layout do ambiente, sem as conversas. */
+  saveTemplateFromEnvironment(environmentId: string, name: string, layout: unknown): Promise<Template>
+  deleteTemplate(id: string): Promise<void>
+  exportTemplate(id: string): Promise<boolean>
+  /** Projetos do arquivo são procurados pelo nome; os que faltam, a pessoa aponta a pasta. */
+  importTemplate(): Promise<Template | null>
 
   createSession(req: CreateSessionRequest): Promise<CreateSessionResult>
   startSession(environmentId: string, sessionId: string): Promise<void>

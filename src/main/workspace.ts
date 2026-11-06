@@ -4,6 +4,7 @@ import { basename, join, resolve } from 'node:path'
 import type { OpenTabs, Project } from '../shared/types'
 
 export const ENVIRONMENTS_DIR = 'Ambientes'
+/** Só existe em pastas de versões anteriores; os arquivos dela são apagados ao carregar. */
 export const DRAFTS_DIR = 'Temporarios'
 
 export function writeJsonAtomic(path: string, value: unknown): void {
@@ -63,7 +64,7 @@ export class Workspace {
   }
 
   private use(dir: string): void {
-    for (const sub of [ENVIRONMENTS_DIR, DRAFTS_DIR]) mkdirSync(join(dir, sub), { recursive: true })
+    for (const sub of [ENVIRONMENTS_DIR]) mkdirSync(join(dir, sub), { recursive: true })
     this.dir = dir
     try {
       this.list = JSON.parse(readFileSync(this.registryPath(), 'utf8')) as Project[]

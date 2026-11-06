@@ -31,11 +31,7 @@ function initialTheme(): Theme {
   }
 }
 
-type Modal =
-  | { kind: 'export' }
-  | { kind: 'save'; env: Environment; closeAfter: boolean }
-  | { kind: 'close-draft'; env: Environment }
-  | { kind: 'settings' }
+type Modal = { kind: 'template'; env: Environment } | { kind: 'settings' }
 
 export function App(): ReactNode {
   // undefined: ainda carregando; null: primeiro uso, sem pasta escolhida.
@@ -46,7 +42,8 @@ export function App(): ReactNode {
   const [adapters, setAdapters] = useState<AdapterInfo[]>([])
   const [stateList, setStateList] = useState<SessionState[]>([])
   const [modal, setModal] = useState<Modal | null>(null)
-  const [saveName, setSaveName] = useState('')
+  const [templateName, setTemplateName] = useState('')
+  const [renaming, setRenaming] = useState<string | null>(null)
   const [theme, setTheme] = useState<Theme>(initialTheme)
   const [toast, setToast] = useState<string | null>(null)
   const [railExpanded, setRailExpanded] = useState(initialRail)
@@ -76,9 +73,10 @@ export function App(): ReactNode {
   const active = environments.find((e) => e.id === activeId) ?? null
   // Momento do último clique no + das abas: remonta a tela inicial já em "Criar ambiente".
   const [newEnvironmentAt, setNewEnvironmentAt] = useState(0)
+  const [homeVisit, setHomeVisit] = useState(0)
 
-  // Comandos do projeto do ambiente ativo: viram botões na aba dele.
-  const activeProjectId = active?.projectId ?? null
+  // Comandos do projeto da sessão em uso: viram botões na aba do ambiente.
+  const activeProjectId = (activeId && active?.sessions.find((s) => s.id === activeSessions[activeId])?.projectId) || active?.projectId || null
   const [commands, setCommands] = useState<CustomCommand[]>([])
   useEffect(() => {
     setCommands([])
@@ -303,20 +301,10 @@ export function App(): ReactNode {
     removeTab(env)
   }
 
-  const discardDraft = async (env: Environment): Promise<void> => {
-    await ide.deleteEnvironment(env.id)
-    removeTab(env)
-    setEnvironments((list) => list.filter((e) => e.id !== env.id))
-  }
-
   const requestClose = (env: Environment): void => {
     const panels = apis.current.get(env.id)?.panels ?? []
     if (panels.some((p) => unsavedPanels.has(p.id)) && !window.confirm('Descartar as alterações não salvas?')) return
     panels.forEach((p) => unsavedPanels.delete(p.id))
-    if (env.draft) {
-      setModal({ kind: 'close-draft', env })
-      return
-    }
     // Ambiente sempre confirma; sessão e terminal fecham direto.
     const running = env.sessions.some((s) => states.get(s.id)?.running)
     const question = running ? `Fechar o ambiente ${env.name}? As sessões em execução serão encerradas.` : `Fechar o ambiente ${env.name}?`
@@ -324,31 +312,21 @@ export function App(): ReactNode {
     void closeSaved(env)
   }
 
-  const startSaving = (env: Environment, closeAfter: boolean): void => {
-    setSaveName('')
-    setModal({ kind: 'save', env, closeAfter })
+  const renameEnvironment = (env: Environment, name: string): void => {
+    setRenaming(null)
+    const clean = name.trim()
+    if (!clean || clean === env.name) return
+    updateEnv({ ...env, name: clean })
+    ide.renameEnvironment(env.id, clean).catch((err) => setToast(errorMessage(err)))
   }
 
-  const submitSave = async (e: FormEvent): Promise<void> => {
+  const submitTemplate = async (e: FormEvent): Promise<void> => {
     e.preventDefault()
-    if (modal?.kind !== 'save') return
+    if (modal?.kind !== 'template') return
     try {
-      const saved = await ide.saveEnvironment(modal.env.id, saveName)
-      // A cópia do app tem as sessões mais recentes; do processo principal vêm nome e estado.
-      const merged = { ...(environments.find((env) => env.id === saved.id) ?? saved), name: saved.name, draft: false }
-      updateEnv(merged)
+      const template = await ide.saveTemplateFromEnvironment(modal.env.id, templateName, apis.current.get(modal.env.id)?.toJSON() ?? null)
       setModal(null)
-      if (modal.closeAfter) await closeSaved(merged)
-    } catch (err) {
-      setToast(errorMessage(err))
-    }
-  }
-
-  const exportEnvironment = async (): Promise<void> => {
-    if (!activeId) return
-    try {
-      const saved = await ide.exportEnvironment(activeId, apis.current.get(activeId)?.toJSON() ?? null)
-      if (saved) setModal(null)
+      setToast(`Template ${template.name} salvo. Ele aparece em Templates, na tela inicial.`)
     } catch (err) {
       setToast(errorMessage(err))
     }
@@ -365,7 +343,7 @@ export function App(): ReactNode {
               <h1>Onde a IDE deve guardar suas coisas?</h1>
             </div>
             <p className="home-note">
-              Escolha uma pasta uma única vez. Ambientes, sessões temporárias e configurações da IDE ficam nela; seus projetos ficam onde você escolher. Prefira uma pasta fora de repositórios.
+              Escolha uma pasta uma única vez. Ambientes, templates e configurações da IDE ficam nela; seus projetos ficam onde você escolher. Prefira uma pasta fora de repositórios.
             </p>
             <button
               type="button"
@@ -401,6 +379,8 @@ export function App(): ReactNode {
           onClick={() => {
             setActiveId(null)
             setNewEnvironmentAt(0)
+            // Já na tela inicial, num passo interno: volta ao menu.
+            setHomeVisit((n) => n + 1)
           }}
         >
           <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -438,16 +418,31 @@ export function App(): ReactNode {
                 setDropHint(null)
               }}
             >
-              <button
-                type="button"
-                role="tab"
-                aria-selected={env.id === activeId}
-                className={env.draft ? 'draft' : ''}
-                data-tip={env.cwd}
-                onClick={() => setActiveId(env.id)}
-              >
-                {env.name}
-              </button>
+              {renaming === env.id ? (
+                <input
+                  className="tab-rename env-rename"
+                  aria-label="Nome do ambiente"
+                  autoFocus
+                  defaultValue={env.name}
+                  onFocus={(e) => e.currentTarget.select()}
+                  onBlur={(e) => renameEnvironment(env, e.currentTarget.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') e.currentTarget.blur()
+                    if (e.key === 'Escape') setRenaming(null)
+                  }}
+                />
+              ) : (
+                <button
+                  type="button"
+                  role="tab"
+                  aria-selected={env.id === activeId}
+                  data-tip="Clique duas vezes para renomear"
+                  onClick={() => setActiveId(env.id)}
+                  onDoubleClick={() => setRenaming(env.id)}
+                >
+                  {env.name}
+                </button>
+              )}
               {env.sessions.some((s) => s.interrupted) && (
                 <span className="attention-mark" role="img" aria-label="Pede atenção" data-tip={INTERRUPTED_TIP}>
                   !
@@ -469,16 +464,24 @@ export function App(): ReactNode {
           }}
         />
         <div className="tabs-space" />
-        {active?.draft && <IconButton icon="save" label="Salvar como ambiente" onClick={() => startSaving(active, false)} />}
-        {active && <IconButton icon="upload" label="Exportar ambiente" onClick={() => setModal({ kind: 'export' })} />}
+        {active && (
+          <IconButton
+            icon="save"
+            label="Salvar como template"
+            onClick={() => {
+              setTemplateName(active.name)
+              setModal({ kind: 'template', env: active })
+            }}
+          />
+        )}
         <IconButton icon="openFolder" label="Abrir pasta da IDE" onClick={() => void ide.openWorkspaceFolder()} />
       </header>
 
       <main className="environments">
         {activeId === null && (
           <Home
-            key={newEnvironmentAt}
-            start={newEnvironmentAt ? { name: 'project', intent: 'environment' } : undefined}
+            key={`${homeVisit}-${newEnvironmentAt}`}
+            start={newEnvironmentAt ? { name: 'new', template: null } : undefined}
             environments={environments}
             openIds={openIds}
             onOpen={openEnvironment}
@@ -526,29 +529,12 @@ export function App(): ReactNode {
         <SettingsDialog prefs={prefs} changePrefs={changePrefs} onClose={() => setModal(null)} />
       )}
 
-      {modal?.kind === 'export' && (
+      {modal?.kind === 'template' && (
         <div className="overlay">
-          <div className="modal small" role="dialog" aria-label="Exportar ambiente">
-            <h2>Exportar ambiente</h2>
-            <p>Leva o layout e os painéis. Segredos, conversas e caminhos ficam de fora.</p>
-            <div className="modal-actions">
-              <button type="button" className="ghost" onClick={() => setModal(null)}>
-                Cancelar
-              </button>
-              <button type="button" className="primary" onClick={() => void exportEnvironment()}>
-                Exportar
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {modal?.kind === 'save' && (
-        <div className="overlay">
-          <form className="modal small" role="dialog" aria-label="Salvar como ambiente" onSubmit={(e) => void submitSave(e)}>
-            <h2>Salvar como ambiente</h2>
-            <p>Dê um nome para encontrá-lo depois.</p>
-            <input type="text" aria-label="Nome do ambiente" autoFocus value={saveName} onChange={(e) => setSaveName(e.target.value)} />
+          <form className="modal small" role="dialog" aria-label="Salvar como template" onSubmit={(e) => void submitTemplate(e)}>
+            <h2>Salvar como template</h2>
+            <p>Guarda os projetos, as sessões e o layout deste ambiente, sem as conversas, para abrir outros iguais.</p>
+            <input type="text" aria-label="Nome do template" autoFocus value={templateName} onChange={(e) => setTemplateName(e.target.value)} />
             <div className="modal-actions">
               <button type="button" className="ghost" onClick={() => setModal(null)}>
                 Cancelar
@@ -558,34 +544,6 @@ export function App(): ReactNode {
               </button>
             </div>
           </form>
-        </div>
-      )}
-
-      {modal?.kind === 'close-draft' && (
-        <div className="overlay">
-          <div className="modal small" role="dialog" aria-label="Fechar sessão temporária">
-            <h2>Salvar este ambiente?</h2>
-            <p>Sem salvar, o layout é descartado. As conversas continuam no histórico do projeto.</p>
-            <div className="modal-actions">
-              <button type="button" className="ghost" onClick={() => setModal(null)}>
-                Cancelar
-              </button>
-              <button
-                type="button"
-                className="ghost"
-                onClick={() => {
-                  const { env } = modal
-                  setModal(null)
-                  void discardDraft(env)
-                }}
-              >
-                Descartar
-              </button>
-              <button type="button" className="primary" onClick={() => startSaving(modal.env, true)}>
-                Salvar
-              </button>
-            </div>
-          </div>
         </div>
       )}
 
