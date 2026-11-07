@@ -1,9 +1,9 @@
 import { createReadStream } from 'node:fs'
 import { readdir, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
 import { join, relative, isAbsolute } from 'node:path'
 import { createInterface } from 'node:readline'
 import type { HistoryEntry } from '../shared/types'
+import { transcriptsRoot } from './cache'
 
 const TITLE_LENGTH = 90
 
@@ -64,7 +64,7 @@ async function summarize(path: string, sessionId: string): Promise<HistoryEntry 
  */
 export async function listHistory(
   projectPath: string,
-  root = join(homedir(), '.claude', 'projects')
+  root = transcriptsRoot()
 ): Promise<HistoryEntry[]> {
   const encoded = encodePath(projectPath)
   const worktrees = `${projectPath}.worktrees`

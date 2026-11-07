@@ -2,7 +2,7 @@
 // Uso: npm run build && node e2e/claude-real.mjs
 import { _electron } from 'playwright-core'
 import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { homedir, tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -130,6 +130,38 @@ check('restaurar de novo vai para a aba aberta, sem duplicar', (await page.locat
 check('reaproveita o ambiente da conversa, sem criar outro', readdirSync(join(workspaceDir, 'Ambientes')).length === 1)
 await sleep(1000)
 await page.screenshot({ path: join(here, '10-retomado.png') })
+
+// /clear: a sessão passa para a conversa nova, e é ela que volta ao reabrir
+const claudeSession = () =>
+  readdirSync(join(workspaceDir, 'Ambientes')).flatMap((f) => JSON.parse(readFileSync(join(workspaceDir, 'Ambientes', f), 'utf8')).sessions).find((s) => s.adapterId === 'claude')
+const firstId = claudeSession().conversationId ?? claudeSession().id
+await page.locator('.terminal-panel').first().click()
+await page.keyboard.type('/clear')
+await sleep(500)
+await page.keyboard.press('Enter')
+await sleep(5000)
+const changedOnClear = (claudeSession().conversationId ?? claudeSession().id) !== firstId
+console.log(`info  a linha de status informa a conversa nova logo após o /clear: ${changedOnClear ? 'sim' : 'não, só depois da resposta'}`)
+await page.keyboard.type('responda apenas com a palavra: MORANGO')
+await sleep(300)
+await page.keyboard.press('Enter')
+check('responde depois do /clear', await waitForText(page, /MORANGO[\s\S]*MORANGO/, 60000))
+let afterClear = null
+for (let i = 0; i < 40 && !afterClear; i++) {
+  const s = claudeSession()
+  if ((s.conversationId ?? s.id) !== firstId) afterClear = s.conversationId
+  else await sleep(500)
+}
+check('a sessão guarda a conversa nova', Boolean(afterClear), JSON.stringify(claudeSession()))
+check('o rodapé mostra o cache da conversa nova', await page.waitForFunction(() => /Cache \d+(min|s)/.test(document.querySelector('.usage-bar')?.textContent ?? ''), null, { timeout: 20000 }).then(() => true, () => false), (await page.locator('.usage-bar').textContent()).replace(/\s+/g, ' '))
+await sleep(3000)
+await app.close()
+await sleep(800)
+;({ app, page } = await launch())
+await page.locator('.tab-list [role=tab]').first().waitFor()
+check('reabre a conversa de depois do /clear', await waitForText(page, /MORANGO/, 30000))
+check('e não a de antes', !/ABACAXI/.test(await terminalText(page)))
+await page.screenshot({ path: join(here, '10b-depois-do-clear.png') })
 await app.close()
 
 // Limpa só o que este teste criou.

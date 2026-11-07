@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { COMMAND_ICONS, type CommandDraft, type CommandIcon, type CustomCommand } from '../../shared/types'
 import { IconButton } from './icons'
 import { errorMessage, ide } from './ide'
+import { Overlay } from './Overlay'
 
 const EMPTY: CommandDraft = { command: '', name: '', icon: 'play', scope: 'project' }
 
@@ -101,7 +102,7 @@ export function CommandsDialog(props: { projectId: string; onClose(): void }): R
   }, [projectId])
 
   return (
-    <div className="overlay">
+    <Overlay onClose={props.onClose}>
       <div
         className="modal small settings-dialog"
         role="dialog"
@@ -143,6 +144,6 @@ export function CommandsDialog(props: { projectId: string; onClose(): void }): R
           </>
         )}
       </div>
-    </div>
+    </Overlay>
   )
 }

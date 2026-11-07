@@ -27,7 +27,16 @@ process.stdin.on('end', () => {
     const usage = { fiveHour: pick(limits.five_hour), sevenDay: pick(limits.seven_day), updatedAt: Date.now() }
     if (usage.fiveHour || usage.sevenDay) save(usagePath, usage)
     const context = data.context_window || {}
-    if (contextDir && /^[\\w-]+$/.test(sessionId || '') && typeof context.used_percentage === 'number') {
+    const known = contextDir && /^[\\w-]+$/.test(sessionId || '')
+    // A conversa troca de id e de transcript com /clear ou /resume, sem trocar a sessão da IDE.
+    if (known && /^[\\w-]+$/.test(data.session_id || '') && typeof data.transcript_path === 'string') {
+      const file = path.join(contextDir, sessionId + '.conversa')
+      const text = JSON.stringify({ conversationId: data.session_id, transcriptPath: data.transcript_path })
+      let saved = ''
+      try { saved = fs.readFileSync(file, 'utf8') } catch {}
+      if (saved !== text) save(file, JSON.parse(text))
+    }
+    if (known && typeof context.used_percentage === 'number') {
       const size = typeof context.context_window_size === 'number' ? context.context_window_size : null
       save(path.join(contextDir, sessionId + '.json'), { usedPercentage: context.used_percentage, size, updatedAt: Date.now() })
     }
@@ -39,6 +48,12 @@ process.stdin.on('end', () => {
   } catch {}
 })
 `
+
+/** A conversa que está numa sessão do Claude, como a linha de status informa. */
+export interface Conversation {
+  conversationId: string
+  transcriptPath: string
+}
 
 const DEFAULT_PREFERENCES: Preferences = { showUsage: true, showContext: true, showCache: true, showTokens: true, showGit: true }
 const PREFERENCE_KEYS = Object.keys(DEFAULT_PREFERENCES) as Array<keyof Preferences>
@@ -55,7 +70,8 @@ export class UsageTracker {
   constructor(
     userData: string,
     onUsage: (usage: ClaudeUsage | null) => void,
-    onContext: (sessionId: string, context: SessionContext | null) => void
+    onContext: (sessionId: string, context: SessionContext | null) => void,
+    onConversation: (sessionId: string, conversation: Conversation) => void = () => {}
   ) {
     this.usagePath = join(userData, 'uso-claude.json')
     this.contextDir = join(userData, 'contexto')
@@ -71,6 +87,10 @@ export class UsageTracker {
       if (name.endsWith('.json')) {
         const id = name.slice(0, -'.json'.length)
         onContext(id, this.context(id))
+      } else if (name.endsWith('.conversa')) {
+        const id = name.slice(0, -'.conversa'.length)
+        const conversation = this.conversation(id)
+        if (conversation) onConversation(id, conversation)
       }
     })
   }
@@ -97,10 +117,24 @@ export class UsageTracker {
     }
   }
 
+  /** Conversa atual da sessão, informada pela linha de status. Nula antes da primeira atualização dela. */
+  conversation(sessionId: string): Conversation | null {
+    if (!/^[\w-]+$/.test(sessionId)) return null
+    try {
+      const saved = JSON.parse(readFileSync(join(this.contextDir, `${sessionId}.conversa`), 'utf8')) as Partial<Conversation>
+      const { conversationId, transcriptPath } = saved
+      if (typeof conversationId !== 'string' || !/^[\w-]+$/.test(conversationId) || typeof transcriptPath !== 'string') return null
+      return { conversationId, transcriptPath }
+    } catch {
+      return null
+    }
+  }
+
   /** A sessão saiu do ambiente: os arquivos dela não servem mais. */
   forget(sessionId: string): void {
     if (!/^[\w-]+$/.test(sessionId)) return
-    for (const file of [join(this.contextDir, `${sessionId}.json`), join(this.settingsDir, `${sessionId}.json`)]) rmSync(file, { force: true })
+    const files = [`${sessionId}.json`, `${sessionId}.conversa`].map((f) => join(this.contextDir, f))
+    for (const file of [...files, join(this.settingsDir, `${sessionId}.json`)]) rmSync(file, { force: true })
   }
 
   preferences(): Preferences {

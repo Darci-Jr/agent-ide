@@ -1,6 +1,6 @@
 import { open, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import type { CacheInfo } from '../shared/types'
 
 const FIVE_MINUTES = 5 * 60 * 1000
@@ -8,8 +8,11 @@ const ONE_HOUR = 60 * 60 * 1000
 /** Só o fim do transcript: ele passa de dezenas de MB em conversas longas. */
 const TAIL_BYTES = 512 * 1024
 
-/** Nos testes, uma pasta própria no lugar de ~/.claude/projects. */
-const transcriptsRoot = (): string => process.env.AGENT_IDE_TEST_TRANSCRIPTS ?? join(homedir(), '.claude', 'projects')
+/**
+ * Transcripts que a IDE lê (cache e histórico). Nos testes, uma pasta própria no lugar de ~/.claude/projects.
+ * O adaptador não usa: quem retoma é o Claude Code de verdade, que lê a pasta real.
+ */
+export const transcriptsRoot = (): string => process.env.AGENT_IDE_TEST_TRANSCRIPTS ?? join(homedir(), '.claude', 'projects')
 
 /**
  * Lê o cache do prompt a partir das linhas do transcript. Cada resposta renova o prazo,
@@ -56,8 +59,18 @@ export async function transcriptPath(cwd: string, sessionId: string): Promise<st
   return dir ? join(root, dir, `${sessionId}.jsonl`) : null
 }
 
-export async function sessionCache(cwd: string, sessionId: string): Promise<CacheInfo | null> {
-  const path = await transcriptPath(cwd, sessionId)
+/**
+ * O transcript informado pela linha de status vale só se for um .jsonl dentro da pasta de transcripts:
+ * o arquivo que o guarda pode ter sido mexido.
+ */
+export function reportedTranscript(root: string, reported: string | null): string | null {
+  if (!reported || !reported.endsWith('.jsonl')) return null
+  const rel = relative(resolve(root), resolve(reported))
+  return rel && !rel.startsWith('..') && !isAbsolute(rel) ? resolve(reported) : null
+}
+
+/** Cache lido do fim do transcript da conversa atual. */
+export async function sessionCache(path: string | null): Promise<CacheInfo | null> {
   if (!path) return null
   const file = await open(path, 'r').catch(() => null)
   if (!file) return null

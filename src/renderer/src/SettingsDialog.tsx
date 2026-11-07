@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import type { Preferences, UpdateState } from '../../shared/types'
 import { ide } from './ide'
+import { Overlay } from './Overlay'
 
 function updateText(u: UpdateState): string {
   switch (u.status) {
@@ -34,7 +35,7 @@ export function SettingsDialog(props: {
   const { update } = props
   const { prefs, changePrefs } = props
   return (
-    <div className="overlay">
+    <Overlay onClose={props.onClose}>
       <div
         className="modal small settings-dialog"
         role="dialog"
@@ -92,6 +93,6 @@ export function SettingsDialog(props: {
           </button>
         </div>
       </div>
-    </div>
+    </Overlay>
   )
 }

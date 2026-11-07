@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import type { Environment } from '../shared/types'
 import { childEnv } from './childEnv'
+import { conversationHolders, setConversation } from './store'
 import { denyRead, getProtection, isSensitive, listConfigFiles, listTree, readProjectFile, writeProjectFile } from './files'
 import { cleanGroups, exportTemplate, groupsOf, instantiate, parseTemplateFile, sameGroups, slotsFromGroups, templateFromEnvironment } from './templates'
 
@@ -177,5 +178,46 @@ describe('templates', () => {
     expect(slots.map((s) => s.title)).toEqual(['Loja · Sessão 1', 'Loja · Terminal 1', 'API · Sessão 1'])
     expect(slotsFromGroups([{ projectId: 'p1', claude: 1, terminals: 0 }], (id) => names[id]!)[0]!.title).toBe('Sessão 1')
     expect(sameGroups(groupsOf(slots), [{ projectId: 'p1', claude: 1, terminals: 1 }, { projectId: 'p2', claude: 1, terminals: 0 }])).toBe(true)
+  })
+})
+
+describe('conversa da sessão', () => {
+  const env = (): Environment => ({
+    id: 'amb',
+    name: 'Amb',
+    projectId: 'p',
+    cwd: 'C:/p',
+    lastOpenedAt: 0,
+    layout: null,
+    sessions: [
+      { id: 's1', adapterId: 'claude', title: 'Sessão 1', cwd: 'C:/p', started: true },
+      { id: 't1', adapterId: 'shell', title: 'Terminal', cwd: 'C:/p', started: true }
+    ]
+  })
+
+  it('depois de um /clear, a sessão passa a apontar para a conversa nova', () => {
+    const envs = [env()]
+    expect(setConversation(envs, 's1', 's1')).toBe(false)
+    expect(setConversation(envs, 's1', 'nova')).toBe(true)
+    expect(envs[0]?.sessions[0]?.conversationId).toBe('nova')
+    expect(setConversation(envs, 's1', 'nova')).toBe(false)
+    expect(setConversation(envs, 's1', 's1')).toBe(true)
+    expect(envs[0]?.sessions[0]?.conversationId).toBeUndefined()
+    expect(setConversation(envs, 'nao-existe', 'x')).toBe(false)
+  })
+
+  it('o histórico acha a sessão pela conversa atual, não pelo id antigo', () => {
+    const envs = [env()]
+    setConversation(envs, 's1', 'nova')
+    const holders = conversationHolders(envs)
+    expect(holders.get('nova')).toEqual({ environmentId: 'amb', sessionId: 's1' })
+    expect(holders.has('s1')).toBe(false)
+    expect(holders.has('t1')).toBe(false)
+  })
+
+  it('o template não leva a conversa', () => {
+    const e = env()
+    e.sessions[0]!.conversationId = 'nova'
+    expect(JSON.stringify(templateFromEnvironment(e, 'Molde', null))).not.toContain('nova')
   })
 })

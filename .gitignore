@@ -12,3 +12,7 @@ e2e/*.png
 /projetos.json
 /abas.json
 /comandos.json
+
+# Testes pontuais são descartáveis; só o exemplo fica
+e2e/pontual/*
+!e2e/pontual/exemplo.mjs

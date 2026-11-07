@@ -48,7 +48,8 @@ export function Home(props: {
   environments: Environment[]
   onOpen(env: Environment): void
   onResume(id: string): Promise<void>
-  showOpenSession(sessionId: string): boolean
+  /** Leva à aba do ambiente, se ele estiver aberto. */
+  showOpenEnvironment(environmentId: string): boolean
   onDeleted(id: string): void
   toast(message: string): void
   /** Ambientes com aba aberta: no histórico aparecem como abertos. */
@@ -56,7 +57,7 @@ export function Home(props: {
   /** Abre direto em um passo, como o + da barra de abas, que começa no novo ambiente. */
   start?: HomeStep
 }): ReactNode {
-  const { environments, onOpen, onResume, showOpenSession, onDeleted, toast } = props
+  const { environments, onOpen, onResume, showOpenEnvironment, onDeleted, toast } = props
   const [step, setStep] = useState<HomeStep>(props.start ?? { name: 'menu' })
   const [search, setSearch] = useState('')
   const [projects, setProjects] = useState<Project[]>([])
@@ -90,14 +91,15 @@ export function Home(props: {
 
   const restore = (project: Project, entry: HistoryEntry): Promise<void> =>
     guard(async () => {
-      if (showOpenSession(entry.sessionId)) {
+      // A conversa já está numa sessão: leva a ela em vez de rodá-la duas vezes.
+      const holder = entry.holder && environments.find((env) => env.id === entry.holder?.environmentId)
+      if (holder && showOpenEnvironment(holder.id)) {
         setStep({ name: 'menu' })
         return
       }
-      // A conversa pode já pertencer a um ambiente fechado: reabre esse, sem criar outro.
-      const holder = environments.find((env) => env.sessions.some((s) => s.id === entry.sessionId))
-      if (holder) {
-        await ide.startSession(holder.id, entry.sessionId)
+      // Num ambiente fechado: reabre esse, sem criar outro.
+      if (holder && entry.holder) {
+        await ide.startSession(holder.id, entry.holder.sessionId)
         await resume(holder)
         return
       }

@@ -54,7 +54,7 @@ export class SessionManager {
    */
   async start(spec: SessionSpec, input?: string): Promise<void> {
     if (this.live.has(spec.id)) return
-    const { file, args } = await getAdapter(spec.adapterId).spawn({ sessionId: spec.id, started: spec.started, cwd: spec.cwd })
+    const { file, args } = await getAdapter(spec.adapterId).spawn({ sessionId: spec.id, conversationId: spec.conversationId, started: spec.started, cwd: spec.cwd })
     const pty = spawn(file, args, {
       name: 'xterm-256color',
       cols: 120,

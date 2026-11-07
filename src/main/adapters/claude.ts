@@ -23,11 +23,12 @@ export const claudeAdapter: AgentAdapter = {
   id: 'claude',
   label: 'Claude Code',
   detectCommand: 'claude',
-  async spawn({ sessionId, started, cwd }) {
-    // A CLI só grava o transcript na primeira mensagem. Uma sessão aberta e
-    // fechada sem conversa não pode ser retomada, então recomeça com o mesmo id.
-    const resume = started && (await hasTranscript(sessionId))
-    const flags = resume ? ['--resume', sessionId] : ['--session-id', sessionId]
+  async spawn({ sessionId, conversationId, started, cwd }) {
+    // A CLI só grava o transcript na primeira mensagem. Uma conversa aberta e
+    // fechada sem mensagens não pode ser retomada, então recomeça com o mesmo id.
+    const conversation = conversationId ?? sessionId
+    const resume = started && (await hasTranscript(conversation))
+    const flags = resume ? ['--resume', conversation] : ['--session-id', conversation]
     const settings = settingsFor(sessionId, cwd)
     if (settings) flags.push('--settings', settings)
     // No Windows o npm instala um shim .cmd, que precisa passar pelo cmd.exe.

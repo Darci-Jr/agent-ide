@@ -22,6 +22,11 @@ export interface SessionSpec {
   working?: boolean
   /** A IDE ou a aba foi encerrada no meio de um trabalho, e a pessoa ainda não voltou à sessão. */
   interrupted?: boolean
+  /**
+   * Conversa do agente que está na sessão agora. Muda com /clear ou /resume; sem ele, vale o `id`.
+   * Não vai para templates.
+   */
+  conversationId?: string
 }
 
 export interface SessionState {
@@ -250,11 +255,14 @@ export interface Project {
 
 /** Conversa encontrada no histórico de um projeto. */
 export interface HistoryEntry {
+  /** Id da conversa no Claude Code. */
   sessionId: string
   title: string
   cwd: string
   updatedAt: number
   messages: number
+  /** Sessão de um ambiente que está com esta conversa agora. */
+  holder?: { environmentId: string; sessionId: string }
 }
 
 /** Sessão rápida: um ambiente com uma sessão no projeto. */

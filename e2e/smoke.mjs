@@ -1,17 +1,14 @@
-// Abre o app de verdade e percorre o fluxo principal. Uso: npm run e2e
+// Abre o app de verdade e percorre o fluxo principal. Uso: npm run e2e (antes do push).
 // Abre o Claude Code em alguns passos, mas nunca envia mensagens: não consome tokens.
-import { _electron } from 'playwright-core'
 import { execFileSync } from 'node:child_process'
-import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { button, check, dialogs, finish, here, launch, prepare, shot, sleep, waitFor } from './app.mjs'
 
-const here = dirname(fileURLToPath(import.meta.url))
-const root = dirname(here)
-const electronPath = createRequire(import.meta.url)('electron')
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const dirs = prepare()
+const { base, project, profile, workspaceDir, projectsParent, transcripts, exchange, pluginState, git } = dirs
+const confirmations = dialogs.messages
+const launchApp = () => launch(dirs)
 
 // Os terminais usam o shell do sistema: PowerShell no Windows, o $SHELL (bash ou zsh) no Mac e no Linux.
 const WIN = process.platform === 'win32'
@@ -32,83 +29,6 @@ const SAVE = MAC ? 'Meta+S' : 'Control+S'
 const DOC_END = MAC ? 'Meta+ArrowDown' : 'Control+End'
 const killApp = (pid) => (WIN ? execFileSync('taskkill', ['/F', '/PID', String(pid)], { stdio: 'ignore' }) : process.kill(pid, 'SIGKILL'))
 
-const base = mkdtempSync(join(tmpdir(), 'agent-ide-e2e-'))
-const project = join(base, 'loja')
-const profile = join(base, 'perfil')
-const workspaceDir = join(base, 'trabalho')
-// Onde a pessoa escolhe criar projetos novos: fora da pasta de trabalho da IDE.
-const projectsParent = join(base, 'codigo')
-// Transcripts falsos do Claude Code: o e2e nunca escreve no ~/.claude de verdade.
-const transcripts = join(base, 'transcripts')
-const exchange = join(base, 'loja.ambiente.json')
-for (const dir of [join(project, 'docs'), profile, workspaceDir, projectsParent]) mkdirSync(dir, { recursive: true })
-writeFileSync(join(project, '.env'), 'API_KEY=valor-de-teste\n')
-writeFileSync(join(project, 'docs', 'ideia.md'), '# Ideia inicial\n\nTexto.\n')
-writeFileSync(join(project, 'package.json'), '{}\n')
-writeFileSync(join(project, '.gitignore'), '.env\n.claude/\n')
-const git = (...args) => execFileSync('git', ['-C', project, ...args], { encoding: 'utf8' })
-git('init', '-q', '-b', 'main')
-git('add', '.')
-git('-c', 'user.name=teste', '-c', 'user.email=teste@example.com', 'commit', '-q', '-m', 'inicio')
-
-// Plugins falsos: o e2e nunca liga ou desliga os plugins de verdade.
-const pluginDir = join(base, 'plugin-revisor')
-mkdirSync(join(pluginDir, '.claude-plugin'), { recursive: true })
-mkdirSync(join(pluginDir, 'skills', 'revisar'), { recursive: true })
-writeFileSync(join(pluginDir, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'revisor', description: 'Revisa mudanças antes do commit' }))
-writeFileSync(join(pluginDir, 'skills', 'revisar', 'SKILL.md'), '---\nname: revisar\ndescription: Revisa o diff atual\n---\n')
-const pluginState = join(base, 'plugins-falsos.json')
-writeFileSync(
-  pluginState,
-  JSON.stringify({
-    plugins: [
-      { id: 'revisor@teste', version: '1.0.0', scope: 'user', enabled: true, installPath: pluginDir },
-      { id: 'desligado@teste', version: '2.0.0', scope: 'user', enabled: false, installPath: join(base, 'nao-existe') }
-    ]
-  })
-)
-
-let failures = 0
-const check = (name, ok, detail = '') => {
-  console.log(`${ok ? 'ok   ' : 'FALHA'} ${name}${detail ? ` (${detail})` : ''}`)
-  if (!ok) failures++
-}
-
-// Confirmações são aceitas; para testar o "Cancelar", ligue dismissNextDialog antes do clique.
-const confirmations = []
-let dismissNextDialog = false
-
-async function launch() {
-  const env = {
-    ...process.env,
-    AGENT_IDE_USER_DATA: profile,
-    AGENT_IDE_TEST_DIRECTORY: project,
-    AGENT_IDE_TEST_PROJECT_PARENT: projectsParent,
-    AGENT_IDE_TEST_TRANSCRIPTS: transcripts,
-    AGENT_IDE_TEST_WORKSPACE: workspaceDir,
-    AGENT_IDE_TEST_EXCHANGE_FILE: exchange,
-    AGENT_IDE_TEST_PLUGIN_CLI: join(here, 'fake-claude-plugins.cjs'),
-    AGENT_IDE_TEST_PLUGIN_STATE: pluginState
-  }
-  delete env.ELECTRON_RUN_AS_NODE
-  delete env.ELECTRON_RENDERER_URL
-  // Como o npm run start (electron-vite preview) abre o app.
-  env.NODE_ENV = 'production'
-  const app = await _electron.launch({ executablePath: electronPath, args: [root], env, cwd: root })
-  const page = await app.firstWindow()
-  page.on('pageerror', (e) => check(`sem erro na página: ${e.message}`, false))
-  page.on('dialog', (d) => {
-    confirmations.push(d.message())
-    if (dismissNextDialog) {
-      dismissNextDialog = false
-      void d.dismiss()
-    } else void d.accept()
-  })
-  await page.waitForSelector('.app')
-  return { app, page }
-}
-
-const button = (page, label) => page.getByRole('button', { name: label, exact: true })
 // O mouse de verdade sobre a janela também gera eventos e pode tirar a dica: tenta algumas vezes.
 const hoverTip = async (page, label) => {
   for (let i = 0; i < 5; i++) {
@@ -119,7 +39,6 @@ const hoverTip = async (page, label) => {
   }
   return false
 }
-const shot = (page, name) => page.screenshot({ path: join(here, `${name}.png`) })
 const newTerminal = async (page) => {
   await button(page, 'Abrir terminal na pasta da sessão atual').click()
   await sleep(700)
@@ -134,7 +53,7 @@ const hosts = (page) => page.locator('.environment:visible .terminal-host')
 const anyHostHas = (page, text) => hosts(page).evaluateAll((els, t) => els.some((e) => e.textContent.includes(t)), text)
 const projectRow = (page, name) => page.locator('.home-row').filter({ hasText: name }).first().locator('button').first()
 
-let { app, page } = await launch()
+let { app, page } = await launchApp()
 
 // Menu nativo: o padrão do Electron recarregava a janela com Ctrl+R e fechava a IDE com Ctrl+W,
 // atalhos que o terminal e o Claude Code usam.
@@ -380,7 +299,7 @@ check('trocar para um terminal esconde o contexto', !(await usageBar.textContent
 
 await button(page, 'Configurações').click()
 const settingsDialog = page.getByRole('dialog', { name: 'Configurações' })
-const appVersion = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version
+const appVersion = JSON.parse(readFileSync(join(here, '..', 'package.json'), 'utf8')).version
 check(
   'as configurações mostram a versão, e fora do app instalado não procuram atualização',
   (await settingsDialog.getByText(`Agent IDE ${appVersion}`).isVisible()) &&
@@ -454,11 +373,13 @@ const newCommand = async (command, { name = '', all = false, icon = 'Ícone Test
   await settingsCommands.getByRole('button', { name: 'Salvar', exact: true }).click()
   await settingsCommands.getByRole('button', { name: 'Novo comando', exact: true }).waitFor()
 }
+// Modais fecham ao clicar fora deles, no fundo escurecido.
+const closesOutside = (dialog) => page.mouse.click(10, 450).then(() => dialog.waitFor({ state: 'detached', timeout: 2000 })).then(() => true, () => false)
 await button(page, 'Nova sessão').click()
 await sleep(1200)
 await button(page, 'Configurações').click()
 check('as configurações não têm comandos', (await page.getByRole('dialog', { name: 'Configurações' }).getByRole('button', { name: 'Novo comando' }).count()) === 0)
-await page.getByRole('dialog', { name: 'Configurações' }).getByRole('button', { name: 'Fechar', exact: true }).click()
+check('clicar fora fecha as configurações', await closesOutside(page.getByRole('dialog', { name: 'Configurações' })))
 await button(page, 'Comandos').click()
 await newCommand('echo CMD-PROJETO', { name: 'Eco' })
 await newCommand('echo CMD-GERAL', { all: true, icon: 'Ícone Executar' })
@@ -493,7 +414,9 @@ check('o comando do projeto fica na pasta de trabalho', readFileSync(join(worksp
 check('o comando geral fica no perfil do app', readFileSync(join(profile, 'comandos.json'), 'utf8').includes('CMD-GERAL'))
 await button(page, 'Comandos').click()
 for (const n of [1, 2, 3]) await newCommand(`echo EXTRA-${n}`, { all: true })
-await settingsCommands.getByRole('button', { name: 'Fechar', exact: true }).click()
+await settingsCommands.locator('h2').click()
+check('clicar dentro não fecha os comandos', await settingsCommands.isVisible())
+check('clicar fora fecha os comandos', await closesOutside(settingsCommands))
 await envTab.getByRole('button', { name: 'Mais comandos', exact: true }).click()
 check('acima de 4, os comandos vão para um menu', (await page.locator('.tab-command-menu [role=menuitem]').count()) === 1)
 check(
@@ -553,6 +476,35 @@ writeFileSync(
 check('mostra quanto falta para o cache vencer', await page.waitForFunction(() => /Cache (49|50)min/.test(document.querySelector('.usage-bar')?.textContent ?? ''), null, { timeout: 15000 }).then(() => true, () => false), await footerNow())
 check('soma os tokens da conversa, contando cada resposta uma vez', await page.waitForFunction(() => (document.querySelector('.usage-bar')?.textContent ?? '').replace(/\s+/g, ' ').includes('Tokens 1,5 mil'), null, { timeout: 15000 }).then(() => true, () => false), await footerNow())
 await shot(page, '5g-cache')
+// /clear: a conversa troca de id e de transcript, informados pela linha de status.
+const cleared = join(transcriptDir, 'conversa-depois-do-clear.jsonl')
+writeFileSync(
+  cleared,
+  [
+    { type: 'user', cwd: claudeSpec.cwd, message: { content: 'oi' } },
+    { type: 'ai-title', aiTitle: 'Conversa depois do clear' },
+    { type: 'assistant', timestamp: new Date(Date.now() - 60 * 1000).toISOString(), message: { usage: { cache_read_input_tokens: 0, cache_creation_input_tokens: 10, cache_creation: { ephemeral_1h_input_tokens: 10, ephemeral_5m_input_tokens: 0 } } } }
+  ].map((l) => JSON.stringify(l)).join('\n') + '\n'
+)
+writeFileSync(join(profile, 'contexto', `${claudeSpec.id}.conversa`), JSON.stringify({ conversationId: 'conversa-depois-do-clear', transcriptPath: cleared }))
+check('depois de um /clear, o cache segue a conversa nova', await page.waitForFunction(() => /Cache (58|59)min/.test(document.querySelector('.usage-bar')?.textContent ?? ''), null, { timeout: 15000 }).then(() => true, () => false), await footerNow())
+const savedConversation = () =>
+  readdirSync(join(workspaceDir, 'Ambientes'))
+    .flatMap((f) => JSON.parse(readFileSync(join(workspaceDir, 'Ambientes', f), 'utf8')).sessions)
+    .find((s) => s.id === claudeSpec.id)?.conversationId
+check('a sessão guarda a conversa nova, para retomar a certa', await waitFor(() => savedConversation() === 'conversa-depois-do-clear'), String(savedConversation()))
+// No histórico, a conversa nova está aberta nesta sessão: leva a ela em vez de abrir outra.
+const envTabsBefore = await page.locator('.tab-list [role=tab]').count()
+const activeBefore = await page.locator('.tab-list .tab.on [role=tab]').textContent()
+await goHome(page)
+await button(page, 'Carregar sessão').click()
+await projectRow(page, 'loja').click()
+await page.locator('.home-row', { hasText: 'Conversa depois do clear' }).locator('button').first().click()
+await page.locator('.environment:visible').waitFor()
+check(
+  'carregar a conversa nova leva à sessão onde ela está',
+  (await page.locator('.tab-list [role=tab]').count()) === envTabsBefore && (await page.locator('.tab-list .tab.on [role=tab]').textContent()) === activeBefore
+)
 await claudeTab.getByRole('button', { name: 'Fechar', exact: true }).click()
 await sleep(400)
 
@@ -569,6 +521,8 @@ await button(page, 'Tema claro').click()
 // Template a partir do ambiente aberto: sessões e layout, sem conversas nem caminhos
 await button(page, 'Salvar como template').click()
 const templateDialog = page.getByRole('dialog', { name: 'Salvar como template' })
+check('clicar fora fecha o salvar como template', await closesOutside(templateDialog))
+await button(page, 'Salvar como template').click()
 await templateDialog.getByLabel('Nome do template').fill('Loja completa')
 await templateDialog.getByRole('button', { name: 'Salvar', exact: true }).click()
 await page.locator('.toast', { hasText: 'Template Loja completa salvo' }).waitFor()
@@ -681,6 +635,8 @@ const openWorktreeDialog = async () => {
 }
 const worktreeDialog = page.getByRole('dialog', { name: 'Nova sessão em worktree' })
 check('não há mais menu de opções', (await button(page, 'Nova sessão com opções').count()) === 0)
+await openWorktreeDialog()
+check('clicar fora fecha a janela da worktree', await closesOutside(worktreeDialog))
 await openWorktreeDialog()
 check('criar exige um nome', await button(page, 'Criar').isDisabled())
 await worktreeDialog.getByRole('textbox').fill('Corrigir Login')
@@ -846,7 +802,7 @@ await sleep(8000)
 const tabsAtClose = await tabNames(page)
 await app.close()
 await sleep(500)
-;({ app, page } = await launch())
+;({ app, page } = await launchApp())
 await page.locator('.tab-list [role=tab]').first().waitFor()
 await page.locator('.environment:visible .panel-tab').first().waitFor()
 await sleep(2500)
@@ -891,7 +847,7 @@ const tabsAtCrash = await tabNames(page)
 const mainPid = await app.evaluate(() => process.pid)
 killApp(mainPid)
 await sleep(1500)
-;({ app, page } = await launch())
+;({ app, page } = await launchApp())
 await page.locator('.tab-list [role=tab]').first().waitFor()
 await page.locator('.environment:visible .panel-tab').first().waitFor()
 await sleep(1000)
@@ -958,7 +914,7 @@ const closeTab = async (name) => {
 for (const name of await tabNames(page)) if (name !== 'loja') await closeTab(name)
 await page.getByRole('tab', { name: 'loja', exact: true }).click()
 await sleep(300)
-dismissNextDialog = true
+dialogs.dismissNext = true
 const asked = confirmations.length
 await closeTab('loja')
 check('fechar um ambiente pede confirmação', confirmations.slice(asked).some((m) => m.startsWith('Fechar o ambiente loja?')), confirmations.slice(asked).join(' | '))
@@ -995,13 +951,8 @@ check('reabrir pelo histórico retoma as sessões', (await page.locator('.enviro
 await closeTab('loja')
 await app.close()
 await sleep(500)
-;({ app, page } = await launch())
+;({ app, page } = await launchApp())
 await page.waitForSelector('.home-actions')
 check('sem abas abertas, reabre na tela inicial', (await page.locator('.tab-list [role=tab]').count()) === 0)
 check('a tela inicial oferece Retomar', await page.getByRole('button', { name: /^Retomar/ }).isVisible())
-await app.close()
-// Os processos encerrados demoram a soltar a pasta no Windows.
-rmSync(base, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
-
-console.log(failures ? `\n${failures} falha(s)` : '\nTudo certo')
-process.exit(failures ? 1 : 0)
+await finish(app, dirs)

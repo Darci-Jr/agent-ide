@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realp
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { readCacheInfo } from './cache'
+import { readCacheInfo, reportedTranscript, sessionCache, transcriptPath } from './cache'
 import { cleanDraft, CommandStore } from './commands'
 import { parseChanges, parseDiff, parseStatus, repositoryRoot } from './git'
 import { readPluginFolder } from './plugins'
@@ -42,6 +42,15 @@ describe('linha de status', () => {
     runScript({ model: { id: 'x' }, context_window: { used_percentage: null } })
     expect(readJson('uso.json').fiveHour.usedPercentage).toBe(10)
     expect(readJson('contexto', 'sessao-1.json').usedPercentage).toBe(5)
+  })
+
+  it('guarda a conversa atual, que muda com /clear', () => {
+    runScript({ session_id: 'antiga', transcript_path: 'C:/t/antiga.jsonl' })
+    expect(readJson('contexto', 'sessao-1.conversa')).toEqual({ conversationId: 'antiga', transcriptPath: 'C:/t/antiga.jsonl' })
+    runScript({ session_id: 'nova', transcript_path: 'C:/t/nova.jsonl' })
+    expect(readJson('contexto', 'sessao-1.conversa')).toEqual({ conversationId: 'nova', transcriptPath: 'C:/t/nova.jsonl' })
+    runScript({ session_id: '../fora', transcript_path: 'C:/t/x.jsonl' })
+    expect(readJson('contexto', 'sessao-1.conversa').conversationId).toBe('nova')
   })
 
   it('não escreve nada no terminal, a não ser a linha de status da pessoa', () => {
@@ -211,6 +220,32 @@ describe('cache do prompt', () => {
 
   it('sem respostas, não há cache', () => {
     expect(readCacheInfo(JSON.stringify({ type: 'user', message: { content: 'oi' } }))).toBeNull()
+  })
+
+  it('só aceita o transcript informado se for um .jsonl dentro da pasta de transcripts', () => {
+    const root = join(dir, 'projects')
+    expect(reportedTranscript(root, join(root, 'pasta', 'nova.jsonl'))).toBe(join(root, 'pasta', 'nova.jsonl'))
+    expect(reportedTranscript(root, join(root, '..', 'fora.jsonl'))).toBeNull()
+    expect(reportedTranscript(root, join(root, 'pasta', 'nova.txt'))).toBeNull()
+    expect(reportedTranscript(root, null)).toBeNull()
+  })
+
+  it('depois de um /clear, lê o transcript novo e não o da sessão', async () => {
+    const root = join(dir, 'projects')
+    const folder = join(root, 'C--projeto')
+    mkdirSync(folder, { recursive: true })
+    writeFileSync(join(folder, 'sessao-1.jsonl'), created('1h', '2026-11-05T08:00:00.000Z'))
+    writeFileSync(join(folder, 'conversa-nova.jsonl'), created('1h', '2026-11-05T09:40:00.000Z'))
+    const before = process.env.AGENT_IDE_TEST_TRANSCRIPTS
+    process.env.AGENT_IDE_TEST_TRANSCRIPTS = root
+    try {
+      expect((await sessionCache(await transcriptPath('C:/projeto', 'sessao-1')))?.lastAt).toBe(Date.parse('2026-11-05T08:00:00.000Z'))
+      expect((await sessionCache(reportedTranscript(root, join(folder, 'conversa-nova.jsonl'))))?.lastAt).toBe(Date.parse('2026-11-05T09:40:00.000Z'))
+      expect(await sessionCache(null)).toBeNull()
+    } finally {
+      if (before === undefined) delete process.env.AGENT_IDE_TEST_TRANSCRIPTS
+      else process.env.AGENT_IDE_TEST_TRANSCRIPTS = before
+    }
   })
 })
 

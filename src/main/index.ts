@@ -13,10 +13,10 @@ import { UsageTracker } from './usage'
 import { cleanGroups, cleanName, exportTemplate, groupsOf, instantiate, parseTemplateFile, sameGroups, slotsFromGroups, TemplateStore, templateFromEnvironment } from './templates'
 import { denyRead, getProtection, listConfigFiles, listTree, readProjectFile, writeProjectFile } from './files'
 import { listHistory } from './history'
-import { sessionCache, transcriptPath } from './cache'
+import { reportedTranscript, sessionCache, transcriptPath, transcriptsRoot } from './cache'
 import { TokenTally } from './tokens'
 import { SessionManager } from './sessions'
-import { EnvironmentStore, markInterrupted } from './store'
+import { conversationHolders, EnvironmentStore, markInterrupted, setConversation } from './store'
 import { validateProjectName, Workspace } from './workspace'
 import { Updater } from './updater'
 import { setAppMenu } from './menu'
@@ -200,11 +200,18 @@ function registerIpc(): void {
     return dir ? workspace.addExisting(dir) : null
   })
   ipcMain.handle('project:remove', (_e, id: string) => workspace.remove(id))
-  ipcMain.handle('history:list', (_e, id: string) => listHistory(workspace.get(id).path))
+  ipcMain.handle('history:list', async (_e, id: string) => {
+    const holders = conversationHolders(store?.all() ?? [])
+    return (await listHistory(workspace.get(id).path)).map((entry) => {
+      const holder = holders.get(entry.sessionId)
+      return holder ? { ...entry, holder } : entry
+    })
+  })
   ipcMain.handle('history:open', async (_e, projectId: string, entry: HistoryEntry) => {
     const project = workspace.get(projectId)
     if (!existsSync(entry.cwd)) throw new Error(`A pasta desta conversa não existe mais: ${entry.cwd}`)
-    const session = { id: entry.sessionId, adapterId: 'claude', title: entry.title, cwd: entry.cwd, started: true }
+    // Id próprio: o da conversa pode já ser o id de outra sessão, que depois de um /clear está noutra conversa.
+    const session = { id: randomUUID(), conversationId: entry.sessionId, adapterId: 'claude', title: entry.title, cwd: entry.cwd, started: true }
     const env: Environment = {
       id: randomUUID(),
       name: uniqueName(`${project.name} ${dateLabel()}`),
@@ -469,14 +476,20 @@ function registerIpc(): void {
   ipcMain.handle('usage:get', () => usage.usage())
   ipcMain.handle('prefs:get', () => usage.preferences())
   ipcMain.handle('context:get', (_e, id: string) => usage.context(id))
-  ipcMain.handle('tokens:get', async (_e, id: string) => {
+  /** Transcript da conversa que está na sessão do Claude agora; muda com /clear ou /resume. */
+  const currentTranscript = async (id: string): Promise<string | null> => {
     const session = (store?.all() ?? []).flatMap((env) => env.sessions).find((s) => s.id === id)
-    return session?.adapterId === 'claude' ? tokenTally.read(session.id, await transcriptPath(session.cwd, session.id)) : null
-  })
-  ipcMain.handle('cache:get', (_e, id: string) => {
-    const session = (store?.all() ?? []).flatMap((env) => env.sessions).find((s) => s.id === id)
-    return session?.adapterId === 'claude' ? sessionCache(session.cwd, session.id) : null
-  })
+    if (session?.adapterId !== 'claude') return null
+    const conversationId = session.conversationId ?? session.id
+    const reported = usage.conversation(session.id)
+    // O transcript informado só vale se for da conversa que a sessão tem agora.
+    return (
+      reportedTranscript(transcriptsRoot(), reported?.conversationId === conversationId ? reported.transcriptPath : null) ??
+      (await transcriptPath(session.cwd, conversationId))
+    )
+  }
+  ipcMain.handle('tokens:get', async (_e, id: string) => tokenTally.read(id, await currentTranscript(id)))
+  ipcMain.handle('cache:get', async (_e, id: string) => sessionCache(await currentTranscript(id)))
   ipcMain.handle('prefs:save', (_e, prefs: Preferences) => usage.savePreferences(prefs))
 
   ipcMain.handle('files:tree', (_e, cwd: string) => listTree(cwd))
@@ -490,11 +503,14 @@ function registerIpc(): void {
 }
 
 function createWindow(): void {
+  // Nos testes, a janela desenha normalmente, mas fora da tela e sem pegar o foco nem a barra de tarefas.
+  const hidden = process.env.AGENT_IDE_TEST_HIDDEN === '1'
   win = new BrowserWindow({
     width: 1440,
     height: 900,
     title: 'Agent IDE',
     autoHideMenuBar: true,
+    ...(hidden ? { x: -30000, y: -30000, show: false, skipTaskbar: true } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -502,6 +518,7 @@ function createWindow(): void {
       sandbox: true
     }
   })
+  if (hidden) win.once('ready-to-show', () => win?.showInactive())
   // Links abrem no navegador; o app nunca navega para fora da própria tela.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) void shell.openExternal(url)
@@ -543,7 +560,10 @@ void app.whenReady().then(() => {
   usage = new UsageTracker(
     app.getPath('userData'),
     (current) => send('usage:changed', current),
-    (sessionId, context) => send('context:changed', sessionId, context)
+    (sessionId, context) => send('context:changed', sessionId, context),
+    (sessionId, conversation) => {
+      if (store && setConversation(store.all(), sessionId, conversation.conversationId)) store.flush()
+    }
   )
   setClaudeSettings((sessionId, cwd) => usage.settingsFor(sessionId, cwd))
   commands = new CommandStore(join(app.getPath('userData'), 'comandos.json'), () =>

@@ -1,6 +1,7 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { worktreeSlug } from '../../shared/worktreeName'
 import { errorMessage } from './ide'
+import { Overlay } from './Overlay'
 
 export function WorktreeDialog(props: {
   folderName: string
@@ -30,7 +31,7 @@ export function WorktreeDialog(props: {
   }
 
   return (
-    <div className="overlay">
+    <Overlay onClose={() => !creating && props.onClose()}>
       <form
         className="modal small worktree-dialog"
         role="dialog"
@@ -70,6 +71,6 @@ export function WorktreeDialog(props: {
           </button>
         </div>
       </form>
-    </div>
+    </Overlay>
   )
 }

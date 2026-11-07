@@ -20,6 +20,29 @@ export function markInterrupted(env: Environment): void {
   }
 }
 
+/** A conversa da sessão mudou (/clear ou /resume). Devolve se algo mudou. */
+export function setConversation(environments: Environment[], sessionId: string, conversationId: string): boolean {
+  for (const env of environments) {
+    const session = env.sessions.find((s) => s.id === sessionId)
+    if (!session) continue
+    if ((session.conversationId ?? session.id) === conversationId) return false
+    // De volta à conversa original, o campo some: o id da sessão já diz qual é.
+    if (conversationId === session.id) delete session.conversationId
+    else session.conversationId = conversationId
+    return true
+  }
+  return false
+}
+
+/** Onde está cada conversa agora: a conversa atual de cada sessão. */
+export function conversationHolders(environments: Environment[]): Map<string, { environmentId: string; sessionId: string }> {
+  const holders = new Map<string, { environmentId: string; sessionId: string }>()
+  for (const env of environments) {
+    for (const s of env.sessions) if (s.adapterId === 'claude') holders.set(s.conversationId ?? s.id, { environmentId: env.id, sessionId: s.id })
+  }
+  return holders
+}
+
 /**
  * Ambientes temporários não existem mais: os de versões anteriores são apagados.
  * As conversas continuam no histórico de cada projeto.

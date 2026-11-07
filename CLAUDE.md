@@ -13,14 +13,16 @@ IDE desktop centrada em agentes de código (Electron, React e TypeScript). Roda 
 ## Comandos
 
 ```sh
-npm run typecheck
-npm test                    # unidade
-npm run e2e                 # compila e percorre o app real; abre janelas na tela
+npm run check               # typecheck e testes de unidade
+npm run e2e:pontual -- e2e/pontual/<arquivo>.mjs   # compila e testa só o que mudou
+npm run e2e                 # compila e percorre o app real inteiro
 npm run dev                 # app com recarga automática
 npm run start               # app compilado
 npm run dist                # instalador em dist/, sem publicar
 node e2e/packaged.mjs       # abre o app empacotado (depois do dist)
 ```
+
+Os e2e abrem a janela fora da tela, sem pegar o foco. Com `--visivel` ela aparece. Os testes pontuais partem de uma cópia de `e2e/pontual/exemplo.mjs` e são descartáveis: as cópias não vão para o Git.
 
 O GitHub Actions (`.github/workflows/ci.yml`) roda typecheck, testes e e2e em Windows, Mac e Linux a cada pull request; as capturas ficam nos artefatos. Para o Mac, é o único teste possível sem a máquina. O Linux também roda aqui, no WSL com Ubuntu (cópia em `~/agent-ide`, Node em `~/.local/node`).
 
@@ -32,11 +34,11 @@ O GitHub Actions (`.github/workflows/ci.yml`) roda typecheck, testes e e2e em Wi
 
 ## Antes de dizer que terminou
 
-1. Rode `npm run typecheck`, `npm test` e `npm run e2e`.
+1. Rode `npm run check` e um teste pontual do que mudou. O `npm run e2e` completo fica para antes do push.
 2. Olhe as capturas em `e2e/*.png`, porque os testes não avaliam aparência.
 3. Teste a interação como o usuário faz. O botão central de nova sessão ficou quebrado porque o teste criava sessões por outro caminho e o clique real nunca era exercitado.
 
-Toda funcionalidade nova ganha verificação em `e2e/smoke.mjs`.
+Toda funcionalidade nova ganha verificação em `e2e/smoke.mjs`, além do teste pontual.
 
 ## Manter estes arquivos atualizados
 
@@ -67,6 +69,7 @@ Um novo canal de IPC passa por três arquivos: `shared/types.ts`, `preload/index
 - Projeto novo nunca vai para dentro da pasta de trabalho: a pessoa dá o nome e escolhe onde criar, e o seletor abre no último lugar usado.
 - A IDE volta como estava: as mesmas abas, o mesmo layout e a mesma aba ativa, inclusive depois de uma queda. Sem abas abertas, abre na tela inicial, que oferece Retomar o último ambiente.
 - Sessões que rodavam são retomadas sozinhas, mas sem continuar a tarefa. Ambiente novo, inclusive de template, já abre com as sessões iniciadas.
+- A sessão segue a conversa: depois de um `/clear` ou `/resume`, retoma, mostra o cache e aparece no histórico pela conversa nova. A anterior fica no histórico e abre numa sessão própria.
 - Sessão que trabalhava quando foi encerrada mostra "Atenção" até a pessoa digitar nela ou dispensar.
 - O + logo após as abas de ambiente leva direto ao Novo ambiente.
 - Abas de ambiente se reordenam arrastando. Fixadas (alfinete) ficam sempre à esquerda; arrastar não cruza entre fixadas e demais. O fixado fica no ambiente e não vai para o template.
