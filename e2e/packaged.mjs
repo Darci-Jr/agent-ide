@@ -1,4 +1,4 @@
-// Abre o app empacotado (dist/win-unpacked) com um perfil de teste. Uso: npm run dist && node e2e/packaged.mjs
+// Abre o app empacotado (a pasta *-unpacked do dist) com um perfil de teste. Uso: npm run dist && node e2e/packaged.mjs
 // Confere o que só quebra depois de empacotar: o terminal nativo fora do .asar, a versão e o atualizador.
 import { _electron } from 'playwright-core'
 import { execFileSync } from 'node:child_process'
@@ -9,7 +9,12 @@ import { fileURLToPath } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
 const root = dirname(here)
-const exe = join(root, 'dist', 'win-unpacked', 'Agent IDE.exe')
+// O executável dentro do pacote de cada sistema, antes de virar instalador.
+const exe = {
+  win32: join(root, 'dist', 'win-unpacked', 'Agent IDE.exe'),
+  linux: join(root, 'dist', 'linux-unpacked', 'agent-ide'),
+  darwin: join(root, 'dist', process.arch === 'arm64' ? 'mac-arm64' : 'mac', 'Agent IDE.app', 'Contents', 'MacOS', 'Agent IDE')
+}[process.platform]
 const version = JSON.parse(await import('node:fs').then((fs) => fs.readFileSync(join(root, 'package.json'), 'utf8'))).version
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
@@ -72,7 +77,8 @@ try {
   check('dá para procurar de novo', (await page.locator('.app').count()) === 1)
 } finally {
   const pid = await app.evaluate(() => process.pid).catch(() => null)
-  if (pid) execFileSync('taskkill', ['/F', '/T', '/PID', String(pid)], { stdio: 'ignore' })
+  if (pid && process.platform === 'win32') execFileSync('taskkill', ['/F', '/T', '/PID', String(pid)], { stdio: 'ignore' })
+  else if (pid) process.kill(pid, 'SIGKILL')
   await sleep(800)
   rmSync(base, { recursive: true, force: true, maxRetries: 5, retryDelay: 300 })
 }
