@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import type { CacheInfo, ClaudeUsage, GitStatus, SessionContext, UsageWindow } from '../../shared/types'
+import type { CacheInfo, ClaudeUsage, TokenTotals, GitStatus, SessionContext, UsageWindow } from '../../shared/types'
 
 const BLOCKS = 5
 
@@ -61,6 +61,23 @@ function CacheState({ data }: { data: CacheInfo | null }): ReactNode {
   )
 }
 
+const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 })
+
+/** Tokens da conversa inteira; a dica separa o que é entrada, cache e saída. */
+function TokensState({ data }: { data: TokenTotals | null }): ReactNode {
+  if (!data) return <span className="usage-meter" data-tip="Aparece depois da primeira resposta">Tokens —</span>
+  const tip = [
+    `Conversa inteira, ${data.responses} ${data.responses === 1 ? 'resposta' : 'respostas'}`,
+    `entrada ${compact.format(data.input)} · cache gravado ${compact.format(data.cacheWrite)}`,
+    `cache lido ${compact.format(data.cacheRead)} · saída ${compact.format(data.output)}`
+  ].join('\n')
+  return (
+    <span className="usage-meter" data-tip={tip}>
+      Tokens {compact.format(data.total)}
+    </span>
+  )
+}
+
 /** Só o estado: as ações de Git ficam no ícone da barra lateral. */
 function GitState({ git }: { git: GitStatus }): ReactNode {
   return (
@@ -92,6 +109,8 @@ export function UsageBar(props: {
   showContext: boolean
   /** Nulo quando o cache está desligado ou não há sessão do Claude em uso. */
   cache: { data: CacheInfo | null } | null
+  /** Nulo quando desligado ou sem sessão do Claude em uso. */
+  tokens: { data: TokenTotals | null } | null
   /** Nulo quando o Git está desligado ou a pasta não é um repositório. */
   git: GitStatus | null
 }): ReactNode {
@@ -113,6 +132,7 @@ export function UsageBar(props: {
       )}
       {props.showContext && context && <Meter label="Contexto" percent={context.data?.usedPercentage ?? null} tip={contextTip} />}
       {props.cache && <CacheState data={props.cache.data} />}
+      {props.tokens && <TokensState data={props.tokens.data} />}
       {props.git && <GitState git={props.git} />}
     </footer>
   )

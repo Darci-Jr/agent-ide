@@ -56,6 +56,10 @@ export function SettingsDialog(props: {
             Mostrar cache da sessão no rodapé
           </label>
           <label className="setting">
+            <input type="checkbox" checked={prefs.showTokens} onChange={(e) => props.changePrefs({ ...prefs, showTokens: e.target.checked })} />
+            Mostrar tokens da sessão no rodapé
+          </label>
+          <label className="setting">
             <input type="checkbox" checked={prefs.showGit} onChange={(e) => changePrefs({ ...prefs, showGit: e.target.checked })} />
             Mostrar Git no rodapé
           </label>

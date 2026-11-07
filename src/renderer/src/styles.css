@@ -1292,7 +1292,8 @@ button:disabled {
   border-radius: 3px;
   font-size: 13px;
   pointer-events: none;
-  white-space: nowrap;
+  /* Respeita quebras de linha da dica e quebra textos longos na largura máxima. */
+  white-space: pre-line;
 }
 
 /* Tela inicial */

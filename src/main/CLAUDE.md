@@ -37,7 +37,8 @@ Quem instala ou testa o app usa perfil próprio: nos testes, defina `AGENT_IDE_U
 - **Uso e contexto:** vêm de `rate_limits` e `context_window` na entrada da linha de status, passada por `--settings` em `usage.ts`. Os limites só existem para assinantes, e os dois só depois da primeira resposta. No Windows o comando roda no Git Bash; `ELECTRON_RUN_AS_NODE=1` no próprio comando é necessário, ou o Electron abre como app e não lê a entrada.
 - **Plugins:** use `claude plugin list|enable|disable --json` em vez de editar `enabledPlugins`. Sem `--scope`, ele grava no escopo que já decide sobre o plugin. `enable` e `disable` saem com código 1 quando já estava no estado pedido (`alreadyInGoalState`).
 - **Cache do prompt:** a linha de status não informa. `cache.ts` lê o fim do transcript: a última resposta da conversa principal (sem `isSidechain`) marca o início, e `cache_creation.ephemeral_1h/5m_input_tokens` diz se dura 1 hora ou 5 minutos. Nos testes, `AGENT_IDE_TEST_TRANSCRIPTS` troca `~/.claude/projects`.
-- **Transcript não serve para contexto e custo:** ele não informa o limite de contexto, repete o mesmo `message.id` em várias linhas (os tokens contariam quase três vezes) e grava `cost-state` raramente. Prefira a linha de status.
+- **Transcript e linha de status:** o transcript não informa o limite de contexto (use a linha de status), e repete o mesmo `message.id` em várias linhas: `tokens.ts` fica com uma por resposta, ou os tokens contariam quase três vezes. A linha de status só traz os tokens do contexto atual, não o total da sessão. Seu `cost.total_cost_usd` veio 0 numa conta de assinatura.
+- **Linha de status nova:** tem um objeto `prompt_cache` (`ttl`, `expires_at`) que poderia substituir a leitura do transcript em `cache.ts`. Não foi testado.
 
 ## Adaptadores
 

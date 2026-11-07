@@ -73,11 +73,12 @@ Um novo canal de IPC passa por três arquivos: `shared/types.ts`, `preload/index
 - Fechar uma aba não apaga o ambiente; apagar é uma ação separada. O Histórico de ambientes, na tela inicial, lista abertos e fechados com busca por ambiente, projeto ou sessão, e reabrir retoma as sessões que estavam abertas ao fechar.
 - Fechar sessão ou terminal é direto, sem confirmação. Fechar um ambiente sempre pede confirmação.
 - A barra lateral tem ações separadas: nova sessão, terminal na pasta da sessão atual, sessão do Claude em worktree, Git, Plugins e Comandos. Não há menu de opções. Configurações ficam no pé da barra e só tratam do rodapé. Clicar em Visão geral expande ou recolhe a barra: expandida mostra o nome ao lado de cada ícone e não mostra dica; recolhida mostra a dica.
-- O rodapé só mostra estado, nunca tem ações: uso do Claude (5h e semana), contexto e tempo até o cache vencer da sessão do Claude em uso e, à direita, o Git da sessão em uso. Sem textos explicativos. Cada indicador tem sua opção nas configurações, e nenhuma muda algo nas sessões.
+- O rodapé só mostra estado, nunca tem ações: uso do Claude (5h e semana), contexto, tempo até o cache vencer e tokens da conversa inteira da sessão do Claude em uso e, à direita, o Git da sessão em uso. Sem textos explicativos. Cada indicador tem sua opção nas configurações, e nenhuma muda algo nas sessões.
 - Ações de Git ficam no ícone Git da barra lateral e nunca forçam: trocar de branch é recusado com alterações versionadas, pull é só `--ff-only`, push não força e remover worktree pede confirmação e recusa uma em uso.
 - "Ver alterações", no menu Git, abre o painel Alterações: diff unificado da pasta contra o último commit, com stage, sem stage e arquivos novos juntos. É só leitura, sem stage nem descarte. O painel guarda a pasta onde abriu, e há um por pasta.
 - O painel de plugins ativa e desativa pelo `claude plugin` oficial. Nunca reinicia sessões: avisa quais precisam reiniciar ou de `/reload-plugins`.
 - Comandos personalizados são criados pelo ícone Comandos da barra lateral, não nas configurações. Por projeto ou para todos, viram botões na aba do ambiente ativo, na barra de cima, e nas abas de terminal, nunca nas do Claude. Cada clique abre um terminal novo na pasta da sessão em uso e executa o comando nele. O X vem antes deles, e acima de 4 o resto vai para um menu.
+- Sem custo em dinheiro no rodapé: o Claude Code informou US$ 0 numa conta de assinatura, e o usuário preferiu tirar.
 - Temas claro (padrão) e escuro em toda tela nova.
 - Instalador NSIS por usuário, sem pedir administrador, ainda sem assinatura de código. O `appId` (`io.github.darci-jr.agent-ide`) nunca muda.
 - Atualizações pelas releases do GitHub: o app procura ao abrir e a cada 4 horas e baixa sozinho, mas nunca reinicia sozinho. Um ícone na barra de cima avisa quando a versão está pronta, e ela também entra ao fechar o app. Configurações mostram a versão e procuram atualização.
@@ -85,10 +86,9 @@ Um novo canal de IPC passa por três arquivos: `shared/types.ts`, `preload/index
 
 ## Próximos passos, nesta ordem
 
-1. Custo por sessão. A linha de status já recebe `cost`, como recebe o contexto.
-2. Aplicações em execução, por sessão.
-3. Adaptadores de outras CLIs e de modelos locais.
-4. Instaladores e suporte testado a Mac e Linux. Hoje só o Windows tem instalador e testes.
+1. Aplicações em execução, por sessão.
+2. Adaptadores de outras CLIs e de modelos locais.
+3. Instaladores e suporte testado a Mac e Linux. Hoje só o Windows tem instalador e testes.
 
 ## Ambiente de desenvolvimento
 

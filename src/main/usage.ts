@@ -40,7 +40,8 @@ process.stdin.on('end', () => {
 })
 `
 
-const DEFAULT_PREFERENCES: Preferences = { showUsage: true, showContext: true, showCache: true, showGit: true }
+const DEFAULT_PREFERENCES: Preferences = { showUsage: true, showContext: true, showCache: true, showTokens: true, showGit: true }
+const PREFERENCE_KEYS = Object.keys(DEFAULT_PREFERENCES) as Array<keyof Preferences>
 
 /** Cuida dos arquivos da linha de status e das preferências, todos no perfil do app. */
 export class UsageTracker {
@@ -105,19 +106,15 @@ export class UsageTracker {
   preferences(): Preferences {
     try {
       const saved = JSON.parse(readFileSync(this.prefsPath, 'utf8')) as Partial<Preferences>
-      return { showUsage: saved.showUsage !== false, showContext: saved.showContext !== false, showCache: saved.showCache !== false, showGit: saved.showGit !== false }
+      // Indicador novo vem ligado: só o que a pessoa desligou fica desligado.
+      return Object.fromEntries(PREFERENCE_KEYS.map((k) => [k, saved[k] !== false])) as unknown as Preferences
     } catch {
       return { ...DEFAULT_PREFERENCES }
     }
   }
 
   savePreferences(prefs: Preferences): void {
-    writeJsonAtomic(this.prefsPath, {
-      showUsage: Boolean(prefs.showUsage),
-      showContext: Boolean(prefs.showContext),
-      showCache: Boolean(prefs.showCache),
-      showGit: Boolean(prefs.showGit)
-    })
+    writeJsonAtomic(this.prefsPath, Object.fromEntries(PREFERENCE_KEYS.map((k) => [k, Boolean(prefs[k])])))
   }
 
   /**

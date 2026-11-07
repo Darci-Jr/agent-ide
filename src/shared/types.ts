@@ -192,6 +192,16 @@ export interface SessionContext {
   updatedAt: number
 }
 
+/** Tokens da conversa inteira, somados do transcript. */
+export interface TokenTotals {
+  input: number
+  cacheWrite: number
+  cacheRead: number
+  output: number
+  total: number
+  responses: number
+}
+
 /** Atualização do app instalado. `disabled` em desenvolvimento e nos testes. */
 export interface UpdateState {
   /** Versão em uso. */
@@ -218,6 +228,7 @@ export interface Preferences {
   showUsage: boolean
   showContext: boolean
   showCache: boolean
+  showTokens: boolean
   showGit: boolean
 }
 
@@ -427,6 +438,8 @@ export interface IdeApi {
   getContext(sessionId: string): Promise<SessionContext | null>
   /** Lido do transcript da sessão do Claude; nulo antes da primeira resposta. */
   getCache(sessionId: string): Promise<CacheInfo | null>
+  /** Somados do transcript; nulo antes da primeira resposta. */
+  getTokens(sessionId: string): Promise<TokenTotals | null>
   onContext(cb: (sessionId: string, context: SessionContext | null) => void): () => void
   gitStatus(cwd: string): Promise<GitStatus | null>
   gitBranches(cwd: string): Promise<string[]>

@@ -45,7 +45,7 @@ export function readCacheInfo(text: string): CacheInfo | null {
   return { lastAt, ttlMs: ttl, expiresAt: lastAt + ttl }
 }
 
-async function transcriptPath(cwd: string, sessionId: string): Promise<string | null> {
+export async function transcriptPath(cwd: string, sessionId: string): Promise<string | null> {
   const root = transcriptsRoot()
   const encoded = cwd.replace(/[^a-zA-Z0-9]/g, '-')
   const direct = join(root, encoded, `${sessionId}.jsonl`)
