@@ -319,11 +319,13 @@ const newCommand = async (command, { name = '', all = false, icon = 'Ícone Test
   await settingsCommands.getByRole('button', { name: 'Salvar', exact: true }).click()
   await settingsCommands.getByRole('button', { name: 'Novo comando', exact: true }).waitFor()
 }
+// Modais fecham ao clicar fora deles, no fundo escurecido.
+const closesOutside = (dialog) => page.mouse.click(10, 450).then(() => dialog.waitFor({ state: 'detached', timeout: 2000 })).then(() => true, () => false)
 await button(page, 'Nova sessão').click()
 await sleep(1200)
 await button(page, 'Configurações').click()
 check('as configurações não têm comandos', (await page.getByRole('dialog', { name: 'Configurações' }).getByRole('button', { name: 'Novo comando' }).count()) === 0)
-await page.getByRole('dialog', { name: 'Configurações' }).getByRole('button', { name: 'Fechar', exact: true }).click()
+check('clicar fora fecha as configurações', await closesOutside(page.getByRole('dialog', { name: 'Configurações' })))
 await button(page, 'Comandos').click()
 await newCommand('echo CMD-PROJETO', { name: 'Eco' })
 await newCommand('echo CMD-GERAL', { all: true, icon: 'Ícone Executar' })
@@ -358,7 +360,9 @@ check('o comando do projeto fica na pasta de trabalho', readFileSync(join(worksp
 check('o comando geral fica no perfil do app', readFileSync(join(profile, 'comandos.json'), 'utf8').includes('CMD-GERAL'))
 await button(page, 'Comandos').click()
 for (const n of [1, 2, 3]) await newCommand(`echo EXTRA-${n}`, { all: true })
-await settingsCommands.getByRole('button', { name: 'Fechar', exact: true }).click()
+await settingsCommands.locator('h2').click()
+check('clicar dentro não fecha os comandos', await settingsCommands.isVisible())
+check('clicar fora fecha os comandos', await closesOutside(settingsCommands))
 await envTab.getByRole('button', { name: 'Mais comandos', exact: true }).click()
 check('acima de 4, os comandos vão para um menu', (await page.locator('.tab-command-menu [role=menuitem]').count()) === 1)
 check(
@@ -416,6 +420,8 @@ await button(page, 'Tema claro').click()
 // Template a partir do ambiente aberto: sessões e layout, sem conversas nem caminhos
 await button(page, 'Salvar como template').click()
 const templateDialog = page.getByRole('dialog', { name: 'Salvar como template' })
+check('clicar fora fecha o salvar como template', await closesOutside(templateDialog))
+await button(page, 'Salvar como template').click()
 await templateDialog.getByLabel('Nome do template').fill('Loja completa')
 await templateDialog.getByRole('button', { name: 'Salvar', exact: true }).click()
 await page.locator('.toast', { hasText: 'Template Loja completa salvo' }).waitFor()
@@ -515,6 +521,8 @@ const openWorktreeDialog = async () => {
 }
 const worktreeDialog = page.getByRole('dialog', { name: 'Nova sessão em worktree' })
 check('não há mais menu de opções', (await button(page, 'Nova sessão com opções').count()) === 0)
+await openWorktreeDialog()
+check('clicar fora fecha a janela da worktree', await closesOutside(worktreeDialog))
 await openWorktreeDialog()
 check('criar exige um nome', await button(page, 'Criar').isDisabled())
 await worktreeDialog.getByRole('textbox').fill('Corrigir Login')

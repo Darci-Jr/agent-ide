@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react'
 import type { Preferences } from '../../shared/types'
+import { Overlay } from './Overlay'
 
 /** Só o que aparece no rodapé. Os comandos têm ícone próprio na barra lateral. */
 export function SettingsDialog(props: { prefs: Preferences; changePrefs(next: Preferences): void; onClose(): void }): ReactNode {
   const { prefs, changePrefs } = props
   return (
-    <div className="overlay">
+    <Overlay onClose={props.onClose}>
       <div
         className="modal small settings-dialog"
         role="dialog"
@@ -39,6 +40,6 @@ export function SettingsDialog(props: { prefs: Preferences; changePrefs(next: Pr
           </button>
         </div>
       </div>
-    </div>
+    </Overlay>
   )
 }

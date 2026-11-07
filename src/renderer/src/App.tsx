@@ -2,6 +2,7 @@ import type { DockviewApi } from 'dockview-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import type { AdapterInfo, CacheInfo, ClaudeUsage, CustomCommand, Environment, GitStatus, Preferences, SessionContext, SessionState } from '../../shared/types'
 import { SettingsDialog } from './SettingsDialog'
+import { Overlay } from './Overlay'
 import { UsageBar } from './UsageBar'
 import { CommandButtons } from './CommandButtons'
 import { commandRunners, INTERRUPTED_TIP, unsavedPanels } from './context'
@@ -530,7 +531,7 @@ export function App(): ReactNode {
       )}
 
       {modal?.kind === 'template' && (
-        <div className="overlay">
+        <Overlay onClose={() => setModal(null)}>
           <form className="modal small" role="dialog" aria-label="Salvar como template" onSubmit={(e) => void submitTemplate(e)}>
             <h2>Salvar como template</h2>
             <p>Guarda os projetos, as sessões e o layout deste ambiente, sem as conversas, para abrir outros iguais.</p>
@@ -544,7 +545,7 @@ export function App(): ReactNode {
               </button>
             </div>
           </form>
-        </div>
+        </Overlay>
       )}
 
       {toast && (

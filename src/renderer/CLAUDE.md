@@ -23,6 +23,7 @@ Cada terminal tem um único elemento DOM, criado uma vez em `terminals.ts`. Pain
 - **Monaco:** os workers são importados por `monaco-editor/editor/editor.worker.js?worker`, sem `esm/vs`, por causa do `exports` do pacote.
 - **`dompurify`:** o override em `package.json` existe para corrigir uma falha crítica herdada do Monaco. Não o remova sem rodar `npm audit`.
 - **Ícones:** `IconButton` interrompe a propagação do clique para não iniciar arrastes. Ouvintes globais de `mousedown` precisam usar captura.
+- **Modais:** use `Overlay.tsx` como fundo, que fecha ao clicar fora, e trate o Esc no próprio modal.
 - **Dicas:** use `data-tip`, não `title`, cuja demora faz a dica parecer ausente. `Tooltip.tsx` atende o app inteiro.
 - **Markdown:** sempre passe por `DOMPurify`. Links não navegam dentro do app.
 
