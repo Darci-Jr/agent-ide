@@ -59,6 +59,17 @@ jobs:
         shell: bash
         run: npm run build && npx electron-builder ${{ matrix.alvo }} --publish never
 
+      # A máquina é Apple Silicon e só abre o pacote dela: confere pelo conteúdo que cada pacote
+      # do Mac leva o terminal nativo do seu processador.
+      - name: Confere o terminal nativo nos pacotes do Mac
+        if: runner.os == 'macOS'
+        run: |
+          for arch in arm64 x64; do
+            unzip -l dist/Agent-IDE-*-mac-$arch.zip | grep -q "app.asar.unpacked/node_modules/@lydell/node-pty-darwin-$arch/" \
+              || { echo "O pacote $arch não tem o node-pty-darwin-$arch"; exit 1; }
+            echo "$arch: node-pty-darwin-$arch presente"
+          done
+
       # Abre o app empacotado: terminal nativo fora do .asar, versão e atualizador.
       - name: Testa o app empacotado
         shell: bash
