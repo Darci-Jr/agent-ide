@@ -309,7 +309,8 @@ check('Shift+Enter envia quebra de linha, não Enter', await anyHostHas(page, 'B
 // Arquivos e segredos
 await button(page, 'Arquivos').click()
 await page.waitForSelector('.drawer')
-check('a lista mostra o .env', await page.locator('.drawer .file', { hasText: '.env' }).first().isVisible())
+// A lista carrega depois da gaveta abrir: espera, em vez de olhar no mesmo instante.
+check('a lista mostra o .env', await page.locator('.drawer .file', { hasText: '.env' }).first().waitFor({ timeout: 8000 }).then(() => true, () => false))
 await page.locator('.drawer .file', { hasText: '.env' }).first().click()
 await page.waitForSelector('.monaco-editor')
 await sleep(800)
