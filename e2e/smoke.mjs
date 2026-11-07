@@ -1,93 +1,15 @@
-// Abre o app de verdade e percorre o fluxo principal. Uso: npm run e2e
+// Abre o app de verdade e percorre o fluxo principal. Uso: npm run e2e (antes do push).
 // Abre o Claude Code em alguns passos, mas nunca envia mensagens: não consome tokens.
-import { _electron } from 'playwright-core'
 import { execFileSync } from 'node:child_process'
-import { createRequire } from 'node:module'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { button, check, dialogs, finish, launch, prepare, shot, sleep } from './app.mjs'
 
-const here = dirname(fileURLToPath(import.meta.url))
-const root = dirname(here)
-const electronPath = createRequire(import.meta.url)('electron')
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+const dirs = prepare()
+const { base, project, profile, workspaceDir, projectsParent, transcripts, exchange, pluginState, git } = dirs
+const confirmations = dialogs.messages
+const launchApp = () => launch(dirs)
 
-const base = mkdtempSync(join(tmpdir(), 'agent-ide-e2e-'))
-const project = join(base, 'loja')
-const profile = join(base, 'perfil')
-const workspaceDir = join(base, 'trabalho')
-// Onde a pessoa escolhe criar projetos novos: fora da pasta de trabalho da IDE.
-const projectsParent = join(base, 'codigo')
-// Transcripts falsos do Claude Code: o e2e nunca escreve no ~/.claude de verdade.
-const transcripts = join(base, 'transcripts')
-const exchange = join(base, 'loja.ambiente.json')
-for (const dir of [join(project, 'docs'), profile, workspaceDir, projectsParent]) mkdirSync(dir, { recursive: true })
-writeFileSync(join(project, '.env'), 'API_KEY=valor-de-teste\n')
-writeFileSync(join(project, 'docs', 'ideia.md'), '# Ideia inicial\n\nTexto.\n')
-writeFileSync(join(project, 'package.json'), '{}\n')
-writeFileSync(join(project, '.gitignore'), '.env\n.claude/\n')
-const git = (...args) => execFileSync('git', ['-C', project, ...args], { encoding: 'utf8' })
-git('init', '-q', '-b', 'main')
-git('add', '.')
-git('-c', 'user.name=teste', '-c', 'user.email=teste@example.com', 'commit', '-q', '-m', 'inicio')
-
-// Plugins falsos: o e2e nunca liga ou desliga os plugins de verdade.
-const pluginDir = join(base, 'plugin-revisor')
-mkdirSync(join(pluginDir, '.claude-plugin'), { recursive: true })
-mkdirSync(join(pluginDir, 'skills', 'revisar'), { recursive: true })
-writeFileSync(join(pluginDir, '.claude-plugin', 'plugin.json'), JSON.stringify({ name: 'revisor', description: 'Revisa mudanças antes do commit' }))
-writeFileSync(join(pluginDir, 'skills', 'revisar', 'SKILL.md'), '---\nname: revisar\ndescription: Revisa o diff atual\n---\n')
-const pluginState = join(base, 'plugins-falsos.json')
-writeFileSync(
-  pluginState,
-  JSON.stringify({
-    plugins: [
-      { id: 'revisor@teste', version: '1.0.0', scope: 'user', enabled: true, installPath: pluginDir },
-      { id: 'desligado@teste', version: '2.0.0', scope: 'user', enabled: false, installPath: join(base, 'nao-existe') }
-    ]
-  })
-)
-
-let failures = 0
-const check = (name, ok, detail = '') => {
-  console.log(`${ok ? 'ok   ' : 'FALHA'} ${name}${detail ? ` (${detail})` : ''}`)
-  if (!ok) failures++
-}
-
-// Confirmações são aceitas; para testar o "Cancelar", ligue dismissNextDialog antes do clique.
-const confirmations = []
-let dismissNextDialog = false
-
-async function launch() {
-  const env = {
-    ...process.env,
-    AGENT_IDE_USER_DATA: profile,
-    AGENT_IDE_TEST_DIRECTORY: project,
-    AGENT_IDE_TEST_PROJECT_PARENT: projectsParent,
-    AGENT_IDE_TEST_TRANSCRIPTS: transcripts,
-    AGENT_IDE_TEST_WORKSPACE: workspaceDir,
-    AGENT_IDE_TEST_EXCHANGE_FILE: exchange,
-    AGENT_IDE_TEST_PLUGIN_CLI: join(here, 'fake-claude-plugins.cjs'),
-    AGENT_IDE_TEST_PLUGIN_STATE: pluginState
-  }
-  delete env.ELECTRON_RUN_AS_NODE
-  delete env.ELECTRON_RENDERER_URL
-  const app = await _electron.launch({ executablePath: electronPath, args: [root], env, cwd: root })
-  const page = await app.firstWindow()
-  page.on('pageerror', (e) => check(`sem erro na página: ${e.message}`, false))
-  page.on('dialog', (d) => {
-    confirmations.push(d.message())
-    if (dismissNextDialog) {
-      dismissNextDialog = false
-      void d.dismiss()
-    } else void d.accept()
-  })
-  await page.waitForSelector('.app')
-  return { app, page }
-}
-
-const button = (page, label) => page.getByRole('button', { name: label, exact: true })
 // O mouse de verdade sobre a janela também gera eventos e pode tirar a dica: tenta algumas vezes.
 const hoverTip = async (page, label) => {
   for (let i = 0; i < 5; i++) {
@@ -98,7 +20,6 @@ const hoverTip = async (page, label) => {
   }
   return false
 }
-const shot = (page, name) => page.screenshot({ path: join(here, `${name}.png`) })
 const newTerminal = async (page) => {
   await button(page, 'Abrir terminal na pasta da sessão atual').click()
   await sleep(700)
@@ -113,7 +34,7 @@ const hosts = (page) => page.locator('.environment:visible .terminal-host')
 const anyHostHas = (page, text) => hosts(page).evaluateAll((els, t) => els.some((e) => e.textContent.includes(t)), text)
 const projectRow = (page, name) => page.locator('.home-row').filter({ hasText: name }).first().locator('button').first()
 
-let { app, page } = await launch()
+let { app, page } = await launchApp()
 
 // Primeiro uso: uma pasta, e depois nunca mais
 check('o primeiro uso pede a pasta de trabalho', await button(page, 'Escolher pasta').isVisible())
@@ -750,7 +671,7 @@ await sleep(8000)
 const tabsAtClose = await tabNames(page)
 await app.close()
 await sleep(500)
-;({ app, page } = await launch())
+;({ app, page } = await launchApp())
 await page.locator('.tab-list [role=tab]').first().waitFor()
 await page.locator('.environment:visible .panel-tab').first().waitFor()
 await sleep(2500)
@@ -795,7 +716,7 @@ const tabsAtCrash = await tabNames(page)
 const mainPid = await app.evaluate(() => process.pid)
 execFileSync('taskkill', ['/F', '/PID', String(mainPid)], { stdio: 'ignore' })
 await sleep(1500)
-;({ app, page } = await launch())
+;({ app, page } = await launchApp())
 await page.locator('.tab-list [role=tab]').first().waitFor()
 await page.locator('.environment:visible .panel-tab').first().waitFor()
 await sleep(1000)
@@ -862,7 +783,7 @@ const closeTab = async (name) => {
 for (const name of await tabNames(page)) if (name !== 'loja') await closeTab(name)
 await page.getByRole('tab', { name: 'loja', exact: true }).click()
 await sleep(300)
-dismissNextDialog = true
+dialogs.dismissNext = true
 const asked = confirmations.length
 await closeTab('loja')
 check('fechar um ambiente pede confirmação', confirmations.slice(asked).some((m) => m.startsWith('Fechar o ambiente loja?')), confirmations.slice(asked).join(' | '))
@@ -899,13 +820,8 @@ check('reabrir pelo histórico retoma as sessões', (await page.locator('.enviro
 await closeTab('loja')
 await app.close()
 await sleep(500)
-;({ app, page } = await launch())
+;({ app, page } = await launchApp())
 await page.waitForSelector('.home-actions')
 check('sem abas abertas, reabre na tela inicial', (await page.locator('.tab-list [role=tab]').count()) === 0)
 check('a tela inicial oferece Retomar', await page.getByRole('button', { name: /^Retomar/ }).isVisible())
-await app.close()
-// Os processos encerrados demoram a soltar a pasta no Windows.
-rmSync(base, { recursive: true, force: true, maxRetries: 20, retryDelay: 500 })
-
-console.log(failures ? `\n${failures} falha(s)` : '\nTudo certo')
-process.exit(failures ? 1 : 0)
+await finish(app, dirs)

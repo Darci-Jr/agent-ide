@@ -13,22 +13,24 @@ IDE desktop centrada em agentes de código (Electron, React e TypeScript). Roda 
 ## Comandos
 
 ```sh
-npm run typecheck
-npm test                    # unidade
-npm run e2e                 # compila e percorre o app real; abre janelas na tela
+npm run check               # typecheck e testes de unidade
+npm run e2e:pontual -- e2e/pontual/<arquivo>.mjs   # compila e testa só o que mudou
+npm run e2e                 # compila e percorre o app real inteiro
 npm run dev                 # app com recarga automática
 npm run start               # app compilado
 ```
+
+Os e2e abrem a janela fora da tela, sem pegar o foco. Com `--visivel` ela aparece. Os testes pontuais partem de uma cópia de `e2e/pontual/exemplo.mjs` e são descartáveis: as cópias não vão para o Git.
 
 `node e2e/claude-real.mjs` usa um Claude Code real e **consome tokens**. Rode só de propósito e depois de `npm run build`, quando mexer em sessões, retomada ou histórico.
 
 ## Antes de dizer que terminou
 
-1. Rode `npm run typecheck`, `npm test` e `npm run e2e`.
+1. Rode `npm run check` e um teste pontual do que mudou. O `npm run e2e` completo fica para antes do push.
 2. Olhe as capturas em `e2e/*.png`, porque os testes não avaliam aparência.
 3. Teste a interação como o usuário faz. O botão central de nova sessão ficou quebrado porque o teste criava sessões por outro caminho e o clique real nunca era exercitado.
 
-Toda funcionalidade nova ganha verificação em `e2e/smoke.mjs`.
+Toda funcionalidade nova ganha verificação em `e2e/smoke.mjs`, além do teste pontual.
 
 ## Manter estes arquivos atualizados
 

@@ -469,11 +469,14 @@ function registerIpc(): void {
 }
 
 function createWindow(): void {
+  // Nos testes, a janela desenha normalmente, mas fora da tela e sem pegar o foco nem a barra de tarefas.
+  const hidden = process.env.AGENT_IDE_TEST_HIDDEN === '1'
   win = new BrowserWindow({
     width: 1440,
     height: 900,
     title: 'Agent IDE',
     autoHideMenuBar: true,
+    ...(hidden ? { x: -30000, y: -30000, show: false, skipTaskbar: true } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -481,6 +484,7 @@ function createWindow(): void {
       sandbox: true
     }
   })
+  if (hidden) win.once('ready-to-show', () => win?.showInactive())
   // Links abrem no navegador; o app nunca navega para fora da própria tela.
   win.webContents.setWindowOpenHandler(({ url }) => {
     if (/^https?:/.test(url)) void shell.openExternal(url)
