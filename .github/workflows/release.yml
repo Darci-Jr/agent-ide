@@ -1,5 +1,5 @@
-# Publica uma versão: ao enviar uma tag v1.2.3, compila no Windows, testa e põe o instalador e os
-# arquivos de atualização na release. O app instalado procura atualizações nessas releases.
+# Publica uma versão: ao enviar uma tag v1.2.3, compila e testa em Windows, Mac e Linux e põe os
+# instaladores e os arquivos de atualização (latest*.yml) na mesma release.
 name: Publicar versão
 
 on:
@@ -10,8 +10,17 @@ permissions:
   contents: write
 
 jobs:
-  windows:
-    runs-on: windows-latest
+  pacotes:
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            alvo: --win
+          - os: macos-latest
+            alvo: --mac
+          - os: ubuntu-latest
+            alvo: --linux
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v5
 
@@ -34,18 +43,55 @@ jobs:
 
       - run: npm run typecheck
       - run: npm test
-      - run: npm run dist
 
-      # O envio é do gh, não do electron-builder: o dele terminava antes de mandar o instalador
-      # inteiro e o latest.yml, sem acusar erro. Sem o latest.yml, ninguém recebe a atualização.
-      - name: Publica na release
+      # O npm só instala o terminal nativo do processador da máquina. O pacote Intel do Mac é feito
+      # numa máquina Apple Silicon: sem a versão x64 do node-pty, o terminal não abriria nele.
+      - name: Terminal nativo das duas arquiteturas (Mac)
+        if: runner.os == 'macOS'
+        run: |
+          versao=$(node -p "require('./node_modules/@lydell/node-pty/package.json').optionalDependencies['@lydell/node-pty-darwin-x64']")
+          npm install --no-save --force "@lydell/node-pty-darwin-x64@$versao"
+
+      - name: Gera os pacotes
         shell: bash
+        run: npm run build && npx electron-builder ${{ matrix.alvo }} --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pacotes-${{ runner.os }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+            dist/*.zip
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.blockmap
+            dist/latest*.yml
+          if-no-files-found: error
+
+  # O envio é do gh, não do electron-builder: o dele terminava antes de mandar tudo, sem acusar erro.
+  publica:
+    needs: pacotes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: pacotes
+          merge-multiple: true
+
+      - name: Publica na release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
-          arquivos=(dist/Agent-IDE-Setup-*.exe dist/Agent-IDE-Setup-*.exe.blockmap dist/latest.yml)
-          ls -l "${arquivos[@]}"
-          gh release create "$GITHUB_REF_NAME" "${arquivos[@]}" --title "${GITHUB_REF_NAME#v}" --generate-notes
-          # Confere que a release ficou com os três arquivos completos.
-          gh release view "$GITHUB_REF_NAME" --json assets -q '.assets[] | "\(.name) \(.size)"'
-          test "$(gh release view "$GITHUB_REF_NAME" --json assets -q '[.assets[] | select(.state == "uploaded")] | length')" = 3
+          ls -l pacotes
+          # Sem um destes, os apps instalados daquele sistema não acham a versão nova.
+          for f in latest.yml latest-mac.yml latest-linux.yml; do test -f "pacotes/$f" || { echo "Faltou $f"; exit 1; }; done
+          gh release create "$GITHUB_REF_NAME" pacotes/* --title "${GITHUB_REF_NAME#v}" --generate-notes \
+            --notes-file - <<'NOTAS'
+          **Windows:** `Agent-IDE-Setup-<versão>.exe`. **Linux:** `.AppImage` (qualquer distribuição, se atualiza sozinho) ou `.deb`. **Mac (experimental, sem assinatura):** `.dmg` de `arm64` (Apple Silicon) ou `x64` (Intel); na primeira abertura, clique com o botão direito no app e escolha Abrir.
+          NOTAS
+          total=$(ls pacotes | wc -l)
+          enviados=$(gh release view "$GITHUB_REF_NAME" --json assets -q '[.assets[] | select(.state == "uploaded")] | length')
+          echo "arquivos: $total, enviados: $enviados"
+          test "$total" = "$enviados"

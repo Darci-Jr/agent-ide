@@ -17,6 +17,14 @@ Depois disso, a IDE se atualiza sozinha: baixa a versão nova em segundo plano e
 cima quando ela está pronta. Ela nunca reinicia sem você pedir, e a versão nova também entra quando
 você fecha a IDE.
 
+**Linux:** baixe o `.AppImage`, dê permissão de execução (`chmod +x Agent-IDE-*.AppImage`) e abra.
+Ele roda em qualquer distribuição e se atualiza sozinho. No Ubuntu e no Debian, há também o `.deb`
+(`sudo apt install ./Agent-IDE-*.deb`), que se atualiza baixando o novo.
+
+**Mac (experimental):** baixe o `.dmg` de `arm64` para Apple Silicon (M1 em diante) ou de `x64`
+para Intel. O app ainda não é assinado pela Apple: na primeira vez, clique nele com o botão direito
+e escolha **Abrir**. Ele avisa quando há versão nova, mas ainda não se atualiza sozinho.
+
 ## O que faz
 
 - **Pasta de trabalho:** escolhida uma vez, no primeiro uso. Guarda só os dados da IDE:

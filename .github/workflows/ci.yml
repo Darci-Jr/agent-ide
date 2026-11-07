@@ -1,0 +1,56 @@
+# Testes nos três sistemas a cada pull request e a cada push na main. É a forma de testar Mac e
+# Linux sem ter as máquinas: as capturas do e2e ficam nos artefatos de cada execução.
+name: Testes
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  testes:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+
+      # O e2e abre o Claude Code de verdade (sem conta: só a tela inicial dele) e usa Git.
+      - name: Prepara o e2e
+        shell: bash
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          git config --global user.name teste
+          git config --global user.email teste@example.com
+
+      # Linux: tela virtual, e o Ubuntu 24 bloqueia o sandbox do Electron sem este ajuste.
+      - name: e2e (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          xvfb-run -a --server-args="-screen 0 1440x900x24" npm run e2e
+
+      - name: e2e
+        if: runner.os != 'Linux'
+        run: npm run e2e
+
+      - name: Guarda as capturas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: capturas-${{ runner.os }}
+          path: e2e/*.png
+          if-no-files-found: ignore

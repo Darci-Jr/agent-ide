@@ -13,6 +13,25 @@ const root = dirname(here)
 const electronPath = createRequire(import.meta.url)('electron')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+// Os terminais usam o shell do sistema: PowerShell no Windows, o $SHELL (bash ou zsh) no Mac e no Linux.
+const WIN = process.platform === 'win32'
+const MAC = process.platform === 'darwin'
+const sh = WIN
+  ? {
+      nodeEnv: 'echo "NODE-ENV=[$env:NODE_ENV]"',
+      lines: '1..300 | ForEach-Object { "LINHA-$_" }',
+      loop: 'while ($true) { Write-Host TRABALHANDO; Start-Sleep -Milliseconds 300 }'
+    }
+  : {
+      nodeEnv: 'echo "NODE-ENV=[$NODE_ENV]"',
+      lines: 'for i in $(seq 1 300); do echo LINHA-$i; done',
+      loop: 'while true; do echo TRABALHANDO; sleep 0.3; done'
+    }
+// Atalhos do editor: Cmd no Mac.
+const SAVE = MAC ? 'Meta+S' : 'Control+S'
+const DOC_END = MAC ? 'Meta+ArrowDown' : 'Control+End'
+const killApp = (pid) => (WIN ? execFileSync('taskkill', ['/F', '/PID', String(pid)], { stdio: 'ignore' }) : process.kill(pid, 'SIGKILL'))
+
 const base = mkdtempSync(join(tmpdir(), 'agent-ide-e2e-'))
 const project = join(base, 'loja')
 const profile = join(base, 'perfil')
@@ -117,6 +136,22 @@ const projectRow = (page, name) => page.locator('.home-row').filter({ hasText: n
 
 let { app, page } = await launch()
 
+// Menu nativo: o padrão do Electron recarregava a janela com Ctrl+R e fechava a IDE com Ctrl+W,
+// atalhos que o terminal e o Claude Code usam.
+const menuShortcuts = await app.evaluate(({ Menu }) => {
+  const menu = Menu.getApplicationMenu()
+  if (!menu) return null
+  const found = []
+  const walk = (items) => items.forEach((i) => (found.push(`${i.role ?? i.label}=${i.accelerator ?? ''}`), i.submenu && walk(i.submenu.items)))
+  walk(menu.items)
+  return found
+})
+check(
+  'o menu nativo não tem recarregar nem fechar',
+  MAC ? !menuShortcuts.some((m) => /^(reload|forcereload|close)=/i.test(m) || /=CmdOrCtrl\+[RW]$|=CommandOrControl\+[RW]$/i.test(m)) && menuShortcuts.some((m) => /^copy=/i.test(m)) : menuShortcuts === null,
+  JSON.stringify(menuShortcuts)
+)
+
 // Primeiro uso: uma pasta, e depois nunca mais
 check('o primeiro uso pede a pasta de trabalho', await button(page, 'Escolher pasta').isVisible())
 await button(page, 'Escolher pasta').click()
@@ -186,13 +221,13 @@ const panels = await hosts(page).evaluateAll((els) =>
 const xs = new Set(panels.map((p) => p[0])), ys = new Set(panels.map((p) => p[1]))
 check('as sessões formam uma grade', xs.size >= 2 && ys.size >= 2, JSON.stringify(panels))
 await typeIn(page, 0, 'echo MARCADOR-SESSAO\r')
-await typeIn(page, 2, 'echo "NODE-ENV=[$env:NODE_ENV]"\r')
+await typeIn(page, 2, `${sh.nodeEnv}\r`)
 await sleep(1500)
 check('os terminais não herdam o NODE_ENV=production do npm run start', await anyHostHas(page, 'NODE-ENV=[]'))
 await shot(page, '1-grade')
 
 // Histórico do terminal
-await typeIn(page, 1, '1..300 | ForEach-Object { "LINHA-$_" }\r')
+await typeIn(page, 1, `${sh.lines}\r`)
 await sleep(1500)
 const secondTerminal = hosts(page).nth(1)
 const hasFirstLine = () => secondTerminal.evaluate((e) => /LINHA-1\s/.test(e.querySelector('.xterm-rows').textContent) || /LINHA-1LINHA-2/.test(e.querySelector('.xterm-rows').textContent))
@@ -280,9 +315,9 @@ await page.waitForSelector('.banner.ok')
 const settings = JSON.parse(readFileSync(join(project, '.claude', 'settings.local.json'), 'utf8'))
 check('cria a regra de deny', settings.permissions.deny.includes('Read(./.env)'))
 await page.locator('.monaco-editor').first().click()
-await page.keyboard.press('Control+End')
+await page.keyboard.press(DOC_END)
 await page.keyboard.type('NOVO=1')
-await page.keyboard.press('Control+S')
+await page.keyboard.press(SAVE)
 await sleep(500)
 check('salva com Ctrl+S', readFileSync(join(project, '.env'), 'utf8').includes('NOVO=1'))
 await shot(page, '4-editor')
@@ -290,7 +325,7 @@ writeFileSync(join(project, '.env'), 'MUDOU_NO_DISCO=1\n')
 await sleep(100)
 await page.locator('.monaco-editor').first().click()
 await page.keyboard.type('X')
-await page.keyboard.press('Control+S')
+await page.keyboard.press(SAVE)
 await page.waitForSelector('.banner.warning[role=alert]')
 check('avisa do conflito sem sobrescrever', readFileSync(join(project, '.env'), 'utf8') === 'MUDOU_NO_DISCO=1\n')
 await button(page, 'Recarregar').click()
@@ -591,7 +626,20 @@ await sleep(1500)
 check('abre as sessões de cada projeto', (await page.locator('.environment:visible .terminal-panel').count()) === 4)
 check('a pasta nova vira um projeto', existsSync(join(projectsParent, 'api-nova')))
 check('com vários projetos, o título leva o projeto', (await page.locator('.environment:visible .panel-tab', { hasText: 'Novo site · Terminal 1' }).count()) === 1)
-check('cada terminal abre na pasta do seu projeto', await anyHostHas(page, 'Novo site>') && (await anyHostHas(page, 'api-nova>')))
+// O prompt muda de um shell para outro: pergunta a pasta a cada terminal.
+for (const title of ['Novo site · Terminal 1', 'api-nova · Terminal 1']) {
+  // O dockview desenha o conteúdo longe da aba: acha o terminal pelo id da sessão.
+  const id = readdirSync(join(workspaceDir, 'Ambientes'))
+    .flatMap((f) => JSON.parse(readFileSync(join(workspaceDir, 'Ambientes', f), 'utf8')).sessions)
+    .find((s) => s.title === title).id
+  await page.locator(`.terminal-panel[data-session="${id}"]`).click()
+  await page.keyboard.type('echo "PASTA:$PWD"\r')
+}
+await sleep(1200)
+// PASTA: seguido do caminho até codigo/<projeto>, com a barra de cada sistema.
+const inFolder = (name) => hosts(page).evaluateAll((els, n) => els.some((e) => new RegExp(`PASTA:\\S*?codigo[\\\\/]${n}`).test(e.textContent)), name)
+check('cada terminal abre na pasta do seu projeto', await inFolder('Novo site'))
+check('a pasta nova também', await inFolder('api-nova'))
 await shot(page, '6d-varios-projetos')
 
 // Template criado e editado pela tela de templates
@@ -777,7 +825,7 @@ const tabNames = (p) => p.locator('.tab-list [role=tab]').allTextContents()
 await page.getByRole('tab', { name: quick, exact: true }).click()
 await newTerminal(page)
 const workingIndex = (await page.locator('.environment:visible .terminal-panel').count()) - 1
-await typeIn(page, workingIndex, 'while ($true) { Write-Host TRABALHANDO; Start-Sleep -Milliseconds 300 }\r')
+await typeIn(page, workingIndex, `${sh.loop}\r`)
 await sleep(8000)
 const tabsAtClose = await tabNames(page)
 await app.close()
@@ -825,7 +873,7 @@ await sleep(800)
 const tabsAtCrash = await tabNames(page)
 // app.process() não é o processo principal no Windows: encerrá-lo deixaria o app aberto.
 const mainPid = await app.evaluate(() => process.pid)
-execFileSync('taskkill', ['/F', '/PID', String(mainPid)], { stdio: 'ignore' })
+killApp(mainPid)
 await sleep(1500)
 ;({ app, page } = await launch())
 await page.locator('.tab-list [role=tab]').first().waitFor()

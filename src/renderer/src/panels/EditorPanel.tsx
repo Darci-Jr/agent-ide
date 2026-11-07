@@ -68,7 +68,7 @@ export function EditorPanel({ params, api }: IDockviewPanelProps<FilePanelParams
       model,
       automaticLayout: true,
       minimap: { enabled: false },
-      fontFamily: "'Cascadia Mono', Consolas, monospace",
+      fontFamily: "'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace",
       fontSize: 13,
       scrollBeyondLastLine: false
     })

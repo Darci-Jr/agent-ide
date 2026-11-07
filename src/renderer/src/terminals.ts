@@ -51,13 +51,15 @@ let currentTheme: Theme = 'light'
  * Cada terminal tem um único elemento, criado uma vez. Painéis apenas o recebem,
  * então destacar, arrastar ou trocar de ambiente nunca reinicia a sessão.
  */
+const IS_MAC = navigator.userAgent.includes('Mac OS X')
+
 function entry(sessionId: string): Entry {
   const existing = entries.get(sessionId)
   if (existing) return existing
   const host = document.createElement('div')
   host.className = 'terminal-host'
   const term = new Terminal({
-    fontFamily: "'Cascadia Mono', Consolas, monospace",
+    fontFamily: "'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace",
     fontSize: 13,
     scrollback: 10000,
     theme: THEMES[currentTheme]
@@ -77,7 +79,8 @@ function entry(sessionId: string): Entry {
       }
       return false
     }
-    if (e.type !== 'keydown' || !e.ctrlKey) return true
+    // No Mac, copiar e colar são Cmd+C e Cmd+V, pelo menu Editar; Ctrl+C e Ctrl+V vão para o terminal.
+    if (e.type !== 'keydown' || !e.ctrlKey || IS_MAC) return true
     const key = e.key.toLowerCase()
     if (key === 'v') return false
     if (key === 'c' && (e.shiftKey || term.hasSelection())) {

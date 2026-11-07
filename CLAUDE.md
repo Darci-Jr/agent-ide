@@ -22,6 +22,8 @@ npm run dist                # instalador em dist/, sem publicar
 node e2e/packaged.mjs       # abre o app empacotado (depois do dist)
 ```
 
+O GitHub Actions (`.github/workflows/ci.yml`) roda typecheck, testes e e2e em Windows, Mac e Linux a cada pull request; as capturas ficam nos artefatos. É o único teste de Mac e Linux que roda sem as máquinas.
+
 **Publicar uma versão:** suba `version` no `package.json`, faça o commit e envie a tag igual (`v0.2.0`). O GitHub Actions (`.github/workflows/release.yml`) confere a versão, roda typecheck e testes e publica o instalador na release. Quem tem o app instalado recebe a atualização dali, pelo `latest.yml`: release sem ele não atualiza ninguém. O envio é com `gh release`, porque o do electron-builder terminava sem mandar tudo e sem acusar erro. Só com pedido do usuário.
 
 `node e2e/claude-real.mjs` usa um Claude Code real e **consome tokens**. Rode só de propósito e depois de `npm run build`, quando mexer em sessões, retomada ou histórico.
@@ -80,18 +82,19 @@ Um novo canal de IPC passa por três arquivos: `shared/types.ts`, `preload/index
 - Comandos personalizados são criados pelo ícone Comandos da barra lateral, não nas configurações. Por projeto ou para todos, viram botões na aba do ambiente ativo, na barra de cima, e nas abas de terminal, nunca nas do Claude. Cada clique abre um terminal novo na pasta da sessão em uso e executa o comando nele. O X vem antes deles, e acima de 4 o resto vai para um menu.
 - Sem custo em dinheiro no rodapé: o Claude Code informou US$ 0 numa conta de assinatura, e o usuário preferiu tirar.
 - Temas claro (padrão) e escuro em toda tela nova.
-- Instalador NSIS por usuário, sem pedir administrador, ainda sem assinatura de código. O `appId` (`io.github.darci-jr.agent-ide`) nunca muda.
-- Atualizações pelas releases do GitHub: o app procura ao abrir e a cada 4 horas e baixa sozinho, mas nunca reinicia sozinho. Um ícone na barra de cima avisa quando a versão está pronta, e ela também entra ao fechar o app. Configurações mostram a versão e procuram atualização.
+- Instaladores, ainda sem assinatura de código: NSIS por usuário no Windows, sem pedir administrador; AppImage e `.deb` no Linux; `.dmg` para Apple Silicon e Intel no Mac, marcado como experimental. O `appId` (`io.github.darci-jr.agent-ide`) nunca muda.
+- Atualizações pelas releases do GitHub: o app procura ao abrir e a cada 4 horas e baixa sozinho, mas nunca reinicia sozinho. Um ícone na barra de cima avisa quando a versão está pronta, e ela também entra ao fechar o app. Configurações mostram a versão e procuram atualização. No Mac, sem assinatura da Apple, o app só avisa e abre a página para baixar; o `.deb` também não se atualiza sozinho.
 - Open source, com licença MIT. As atualizações exigem o repositório público.
 
 ## Próximos passos, nesta ordem
 
 1. Aplicações em execução, por sessão.
 2. Adaptadores de outras CLIs e de modelos locais.
-3. Instaladores e suporte testado a Mac e Linux. Hoje só o Windows tem instalador e testes.
+3. Mac e Linux: código e CI prontos. Falta o teste de uso real (Linux no WSL com Ubuntu; Mac alugado ou emprestado) e, para o Mac se atualizar sozinho, a assinatura da Apple.
 
 ## Ambiente de desenvolvimento
 
-- Windows. Comandos muito longos no Bash falham com `ENAMETOOLONG`: use as ferramentas de arquivo.
+- Windows. Comandos muito longos no Bash falham com `ENAMETOOLONG`: use as ferramentas de arquivo. Para testar o Linux de verdade, use o WSL com Ubuntu, que abre apps gráficos no Windows 11.
+- O e2e roda em Windows, Mac e Linux: comandos de shell ficam no objeto `sh` do `smoke.mjs`, com a versão do PowerShell e a do bash.
 - Com a IDE aberta a partir desta pasta (`npm run start`), o Electron de `node_modules` está em uso e `npm install` falha com `EBUSY`. Instale com ela fechada, ou trabalhe numa worktree com `node_modules` próprio.
 - Se a sessão foi aberta dentro de um Claude Code, os testes herdam variáveis dele. `src/main/childEnv.ts` as remove das sessões criadas pelo app.
