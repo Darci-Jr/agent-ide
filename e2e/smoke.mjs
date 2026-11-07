@@ -735,6 +735,8 @@ check('acompanha a sessão clicada', (await hosts(page).count()) === terminalsBe
 const footerText = async () => ((await page.locator('.usage-bar').textContent()) ?? '').replace(/\s+/g, ' ')
 const waitFooter = (text) => page.waitForFunction((t) => document.querySelector('.usage-bar')?.textContent.includes(t), text, { timeout: 8000 }).then(() => true, () => false)
 check('o rodapé mostra a branch da sessão em uso', await waitFooter('⑂ main'))
+// No Mac a pasta temporária é um atalho (/var -> /private/var): a principal não pode virar worktree.
+check('a pasta principal não aparece como worktree', !(await footerText()).includes('worktree:'), await footerText())
 writeFileSync(join(project, 'package.json'), '{ "alterado": true }\n')
 check('o rodapé conta os arquivos alterados', await waitFooter('●'), await footerText())
 check('o Git fica à direita do uso do Claude', /Contexto|Semana[\s\S]*⑂/.test(await footerText()))
