@@ -22,9 +22,11 @@ npm run dist                # instalador em dist/, sem publicar
 node e2e/packaged.mjs       # abre o app empacotado (depois do dist)
 ```
 
-O GitHub Actions (`.github/workflows/ci.yml`) roda typecheck, testes e e2e em Windows, Mac e Linux a cada pull request; as capturas ficam nos artefatos. É o único teste de Mac e Linux que roda sem as máquinas.
+O GitHub Actions (`.github/workflows/ci.yml`) roda typecheck, testes e e2e em Windows, Mac e Linux a cada pull request; as capturas ficam nos artefatos. Para o Mac, é o único teste possível sem a máquina. O Linux também roda aqui, no WSL com Ubuntu (cópia em `~/agent-ide`, Node em `~/.local/node`).
 
-**Publicar uma versão:** suba `version` no `package.json`, faça o commit e envie a tag igual (`v0.2.0`). O GitHub Actions (`.github/workflows/release.yml`) confere a versão, roda typecheck e testes e publica o instalador na release. Quem tem o app instalado recebe a atualização dali, pelo `latest.yml`: release sem ele não atualiza ninguém. O envio é com `gh release`, porque o do electron-builder terminava sem mandar tudo e sem acusar erro. Só com pedido do usuário.
+**Testar os pacotes sem publicar:** rode o workflow de publicação à mão (`gh workflow run release.yml --ref <branch>`). Ele gera os pacotes dos três sistemas, abre cada um com `e2e/packaged.mjs` e confere o terminal nativo de cada pacote do Mac.
+
+**Publicar uma versão:** suba `version` no `package.json`, faça o commit e envie a tag igual (`v0.2.0`). O GitHub Actions (`.github/workflows/release.yml`) confere a versão, roda typecheck e testes, gera e testa os pacotes dos três sistemas e publica tudo na release. Quem tem o app instalado recebe a atualização dali, pelos `latest.yml`, `latest-mac.yml` e `latest-linux.yml`: release sem eles não atualiza ninguém. O envio é com `gh release`, porque o do electron-builder terminava sem mandar tudo e sem acusar erro. Só com pedido do usuário.
 
 `node e2e/claude-real.mjs` usa um Claude Code real e **consome tokens**. Rode só de propósito e depois de `npm run build`, quando mexer em sessões, retomada ou histórico.
 
