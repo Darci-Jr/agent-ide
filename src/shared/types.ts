@@ -206,7 +206,8 @@ export interface TokenTotals {
 export interface UpdateState {
   /** Versão em uso. */
   version: string
-  status: 'disabled' | 'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'error'
+  /** `available`: versão nova que precisa ser baixada à mão (Mac sem assinatura). */
+  status: 'disabled' | 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'error'
   /** Versão nova encontrada ou já baixada. */
   available?: string
   percent?: number
@@ -457,7 +458,7 @@ export interface IdeApi {
 
   getUpdate(): Promise<UpdateState>
   checkUpdate(): Promise<UpdateState>
-  /** Reinicia na versão já baixada. */
+  /** Reinicia na versão já baixada; no Mac, abre a página para baixar a nova. */
   installUpdate(): Promise<void>
   onUpdate(cb: (state: UpdateState) => void): () => void
   /** Gerais e do projeto, nessa ordem. */

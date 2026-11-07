@@ -34,6 +34,31 @@ nsis:
   artifactName: Agent-IDE-Setup-${version}.${ext}
   deleteAppDataOnUninstall: false
 
+# Mac: um .dmg para cada processador (Apple Silicon e Intel). Sem assinatura da Apple, o Mac pede
+# liberação na primeira abertura e o app não se atualiza sozinho: avisa e abre a página para baixar.
+# O .zip só existe para gerar o latest-mac.yml, que é onde o app vê que há versão nova.
+mac:
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
+  category: public.app-category.developer-tools
+  identity: null
+  artifactName: Agent-IDE-${version}-mac-${arch}.${ext}
+
+# Linux: AppImage roda em qualquer distribuição e se atualiza sozinho; .deb para Ubuntu e Debian.
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  category: Development
+  maintainer: Darci Jr <Darci-Jr@users.noreply.github.com>
+  synopsis: IDE centrada em agentes de código
+  artifactName: Agent-IDE-${version}-linux-${arch}.${ext}
+
 # Diz ao app instalado onde procurar atualizações. O envio para a release é do workflow, com o gh.
 publish:
   provider: github

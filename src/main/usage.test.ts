@@ -250,3 +250,12 @@ describe('tokens da sessão', () => {
     expect(await tally.read('s', file)).toMatchObject({ responses: 1, total: 117 })
   })
 })
+
+describe('PATH do shell de login', () => {
+  it('acha o PATH no meio das mensagens que o shell imprime', async () => {
+    const { pathFromOutput } = await import('./shellEnv')
+    expect(pathFromOutput('Bem-vindo!\n__AGENT_IDE_PATH__/opt/homebrew/bin:/usr/bin__AGENT_IDE_PATH__\nTchau')).toBe('/opt/homebrew/bin:/usr/bin')
+    expect(pathFromOutput('nada aqui')).toBeNull()
+    expect(pathFromOutput('__AGENT_IDE_PATH____AGENT_IDE_PATH__')).toBeNull()
+  })
+})

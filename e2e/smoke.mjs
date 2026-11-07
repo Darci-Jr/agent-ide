@@ -13,6 +13,25 @@ const root = dirname(here)
 const electronPath = createRequire(import.meta.url)('electron')
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 
+// Os terminais usam o shell do sistema: PowerShell no Windows, o $SHELL (bash ou zsh) no Mac e no Linux.
+const WIN = process.platform === 'win32'
+const MAC = process.platform === 'darwin'
+const sh = WIN
+  ? {
+      nodeEnv: 'echo "NODE-ENV=[$env:NODE_ENV]"',
+      lines: '1..300 | ForEach-Object { "LINHA-$_" }',
+      loop: 'while ($true) { Write-Host TRABALHANDO; Start-Sleep -Milliseconds 300 }'
+    }
+  : {
+      nodeEnv: 'echo "NODE-ENV=[$NODE_ENV]"',
+      lines: 'for i in $(seq 1 300); do echo LINHA-$i; done',
+      loop: 'while true; do echo TRABALHANDO; sleep 0.3; done'
+    }
+// Atalhos do editor: Cmd no Mac.
+const SAVE = MAC ? 'Meta+S' : 'Control+S'
+const DOC_END = MAC ? 'Meta+ArrowDown' : 'Control+End'
+const killApp = (pid) => (WIN ? execFileSync('taskkill', ['/F', '/PID', String(pid)], { stdio: 'ignore' }) : process.kill(pid, 'SIGKILL'))
+
 const base = mkdtempSync(join(tmpdir(), 'agent-ide-e2e-'))
 const project = join(base, 'loja')
 const profile = join(base, 'perfil')
@@ -117,6 +136,22 @@ const projectRow = (page, name) => page.locator('.home-row').filter({ hasText: n
 
 let { app, page } = await launch()
 
+// Menu nativo: o padrão do Electron recarregava a janela com Ctrl+R e fechava a IDE com Ctrl+W,
+// atalhos que o terminal e o Claude Code usam.
+const menuShortcuts = await app.evaluate(({ Menu }) => {
+  const menu = Menu.getApplicationMenu()
+  if (!menu) return null
+  const found = []
+  const walk = (items) => items.forEach((i) => (found.push(`${i.role ?? i.label}=${i.accelerator ?? ''}`), i.submenu && walk(i.submenu.items)))
+  walk(menu.items)
+  return found
+})
+check(
+  'o menu nativo não tem recarregar nem fechar',
+  MAC ? !menuShortcuts.some((m) => /^(reload|forcereload|close)=/i.test(m) || /=CmdOrCtrl\+[RW]$|=CommandOrControl\+[RW]$/i.test(m)) && menuShortcuts.some((m) => /^copy=/i.test(m)) : menuShortcuts === null,
+  JSON.stringify(menuShortcuts)
+)
+
 // Primeiro uso: uma pasta, e depois nunca mais
 check('o primeiro uso pede a pasta de trabalho', await button(page, 'Escolher pasta').isVisible())
 await button(page, 'Escolher pasta').click()
@@ -152,7 +187,7 @@ check(
   (await page.getByRole('checkbox', { name: 'loja', exact: true }).isChecked()) && (await page.getByLabel('Sessões do Claude em loja').inputValue()) === '1'
 )
 await button(page, 'Abrir').click()
-await page.locator('.environment:visible .terminal-panel').first().waitFor({ timeout: 8000 }).catch(() => {})
+await page.locator('.environment:visible .terminal-panel:visible').first().waitFor({ timeout: 8000 }).catch(() => {})
 check('criar ambiente não oferece modelos de exemplo', (await page.getByRole('button', { name: /Pensar junto|Várias sessões|Em branco/ }).count()) === 0)
 check('o ambiente novo abre com uma sessão', (await page.locator('.environment:visible .terminal-panel').count()) === 1)
 check('o ambiente usa o nome do projeto', await page.getByRole('tab', { name: 'loja', exact: true }).isVisible())
@@ -165,7 +200,7 @@ await shot(page, '0b-dica')
 // O botão central, que antes não respondia: clique real pelo mouse, sem atalhos
 const center = await box(page.locator('.dock-empty button'))
 await page.mouse.click(center.x + center.width / 2, center.y + center.height / 2)
-await page.locator('.environment:visible .terminal-panel').first().waitFor({ timeout: 8000 }).catch(() => {})
+await page.locator('.environment:visible .terminal-panel:visible').first().waitFor({ timeout: 8000 }).catch(() => {})
 check('o botão central cria a sessão', (await page.locator('.environment:visible .terminal-panel').count()) === 1)
 await sleep(600)
 let closeConfirmations = 0
@@ -186,13 +221,13 @@ const panels = await hosts(page).evaluateAll((els) =>
 const xs = new Set(panels.map((p) => p[0])), ys = new Set(panels.map((p) => p[1]))
 check('as sessões formam uma grade', xs.size >= 2 && ys.size >= 2, JSON.stringify(panels))
 await typeIn(page, 0, 'echo MARCADOR-SESSAO\r')
-await typeIn(page, 2, 'echo "NODE-ENV=[$env:NODE_ENV]"\r')
+await typeIn(page, 2, `${sh.nodeEnv}\r`)
 await sleep(1500)
 check('os terminais não herdam o NODE_ENV=production do npm run start', await anyHostHas(page, 'NODE-ENV=[]'))
 await shot(page, '1-grade')
 
 // Histórico do terminal
-await typeIn(page, 1, '1..300 | ForEach-Object { "LINHA-$_" }\r')
+await typeIn(page, 1, `${sh.lines}\r`)
 await sleep(1500)
 const secondTerminal = hosts(page).nth(1)
 const hasFirstLine = () => secondTerminal.evaluate((e) => /LINHA-1\s/.test(e.querySelector('.xterm-rows').textContent) || /LINHA-1LINHA-2/.test(e.querySelector('.xterm-rows').textContent))
@@ -209,8 +244,14 @@ await sleep(300)
 const hostHandle = await hosts(page).first().elementHandle()
 await button(page, 'Destacar').first().click()
 await sleep(500)
+// Relativo à área de trabalho: as telas das máquinas do CI são menores que a daqui.
 const focusedBox = await box(hosts(page).first())
-check('destacar ocupa quase toda a área', focusedBox.width > 1200 && focusedBox.height > 650, JSON.stringify(focusedBox))
+const dockBox = await box(page.locator('.environment:visible .dock'))
+check(
+  'destacar ocupa quase toda a área',
+  focusedBox.width > dockBox.width * 0.9 && focusedBox.height > dockBox.height * 0.7,
+  JSON.stringify({ terminal: focusedBox, area: dockBox })
+)
 check('faixas das outras sessões aparecem', (await page.locator('.focus-strips .strip').count()) === 4)
 await shot(page, '2-destaque')
 check('destacar mantém o terminal e o conteúdo', await hostHandle.evaluate((e) => e.isConnected && e.textContent.includes('MARCADOR-SESSAO')))
@@ -268,7 +309,8 @@ check('Shift+Enter envia quebra de linha, não Enter', await anyHostHas(page, 'B
 // Arquivos e segredos
 await button(page, 'Arquivos').click()
 await page.waitForSelector('.drawer')
-check('a lista mostra o .env', await page.locator('.drawer .file', { hasText: '.env' }).first().isVisible())
+// A lista carrega depois da gaveta abrir: espera, em vez de olhar no mesmo instante.
+check('a lista mostra o .env', await page.locator('.drawer .file', { hasText: '.env' }).first().waitFor({ timeout: 8000 }).then(() => true, () => false))
 await page.locator('.drawer .file', { hasText: '.env' }).first().click()
 await page.waitForSelector('.monaco-editor')
 await sleep(800)
@@ -280,9 +322,9 @@ await page.waitForSelector('.banner.ok')
 const settings = JSON.parse(readFileSync(join(project, '.claude', 'settings.local.json'), 'utf8'))
 check('cria a regra de deny', settings.permissions.deny.includes('Read(./.env)'))
 await page.locator('.monaco-editor').first().click()
-await page.keyboard.press('Control+End')
+await page.keyboard.press(DOC_END)
 await page.keyboard.type('NOVO=1')
-await page.keyboard.press('Control+S')
+await page.keyboard.press(SAVE)
 await sleep(500)
 check('salva com Ctrl+S', readFileSync(join(project, '.env'), 'utf8').includes('NOVO=1'))
 await shot(page, '4-editor')
@@ -290,7 +332,7 @@ writeFileSync(join(project, '.env'), 'MUDOU_NO_DISCO=1\n')
 await sleep(100)
 await page.locator('.monaco-editor').first().click()
 await page.keyboard.type('X')
-await page.keyboard.press('Control+S')
+await page.keyboard.press(SAVE)
 await page.waitForSelector('.banner.warning[role=alert]')
 check('avisa do conflito sem sobrescrever', readFileSync(join(project, '.env'), 'utf8') === 'MUDOU_NO_DISCO=1\n')
 await button(page, 'Recarregar').click()
@@ -564,7 +606,7 @@ await shot(page, '6b2-novo-ambiente-templates')
 // Um clique no template, no novo ambiente, abre com as sessões e o layout dele, já iniciadas
 await page.getByRole('region', { name: 'A partir de um template' }).locator('.home-row', { hasText: 'Loja completa' }).locator('button').first().click()
 await page.getByRole('tab', { name: 'Loja completa', exact: true }).waitFor()
-await page.locator('.environment:visible .terminal-panel').first().waitFor()
+await page.locator('.environment:visible .terminal-panel:visible').first().waitFor()
 await sleep(1200)
 check('o template abre com as sessões e o layout dele', (await page.locator('.environment:visible .terminal-panel').count()) === 4 && (await page.locator('.environment:visible .dv-groupview').count()) >= 3)
 check('as sessões do template já iniciam', (await page.locator('.environment:visible .terminal-stopped').count()) === 0)
@@ -586,12 +628,25 @@ check('a pasta nova mostra onde vai ser criada', await page.getByText(`em ${proj
 await shot(page, '6c-novo-ambiente')
 await button(page, 'Abrir').click()
 await page.getByRole('tab', { name: 'loja + Novo site + api-nova', exact: true }).waitFor()
-await page.locator('.environment:visible .terminal-panel').first().waitFor()
+await page.locator('.environment:visible .terminal-panel:visible').first().waitFor()
 await sleep(1500)
 check('abre as sessões de cada projeto', (await page.locator('.environment:visible .terminal-panel').count()) === 4)
 check('a pasta nova vira um projeto', existsSync(join(projectsParent, 'api-nova')))
 check('com vários projetos, o título leva o projeto', (await page.locator('.environment:visible .panel-tab', { hasText: 'Novo site · Terminal 1' }).count()) === 1)
-check('cada terminal abre na pasta do seu projeto', await anyHostHas(page, 'Novo site>') && (await anyHostHas(page, 'api-nova>')))
+// O prompt muda de um shell para outro: pergunta a pasta a cada terminal.
+for (const title of ['Novo site · Terminal 1', 'api-nova · Terminal 1']) {
+  // O dockview desenha o conteúdo longe da aba: acha o terminal pelo id da sessão.
+  const id = readdirSync(join(workspaceDir, 'Ambientes'))
+    .flatMap((f) => JSON.parse(readFileSync(join(workspaceDir, 'Ambientes', f), 'utf8')).sessions)
+    .find((s) => s.title === title).id
+  await page.locator(`.terminal-panel[data-session="${id}"]`).click()
+  await page.keyboard.type('echo "PASTA:$PWD"\r')
+}
+await sleep(1200)
+// PASTA: seguido do caminho até codigo/<projeto>, com a barra de cada sistema.
+const inFolder = (name) => hosts(page).evaluateAll((els, n) => els.some((e) => new RegExp(`PASTA:\\S*?codigo[\\\\/]${n}`).test(e.textContent)), name)
+check('cada terminal abre na pasta do seu projeto', await inFolder('Novo site'))
+check('a pasta nova também', await inFolder('api-nova'))
 await shot(page, '6d-varios-projetos')
 
 // Template criado e editado pela tela de templates
@@ -614,7 +669,7 @@ await button(page, 'Criar ambiente').click()
 await page.getByRole('checkbox', { name: 'loja', exact: true }).check()
 await button(page, 'Abrir').click()
 await page.getByRole('tab', { name: 'loja 2', exact: true }).waitFor()
-await page.locator('.environment:visible .terminal-panel').first().waitFor({ timeout: 8000 }).catch(() => {})
+await page.locator('.environment:visible .terminal-panel:visible').first().waitFor({ timeout: 8000 }).catch(() => {})
 await sleep(600)
 check('novo abre um ambiente só com uma sessão', (await page.locator('.environment:visible .terminal-panel').count()) === 1 && (await page.locator('.environment:visible .dv-groupview').count()) === 1)
 await shot(page, '7b-ambiente-novo')
@@ -654,11 +709,17 @@ await sleep(300)
 check('o nome aleatório cria outra worktree', readdirSync(worktrees).length === 2 && !(await worktreeDialog.isVisible()))
 
 // Terminal na pasta da sessão atual: a da worktree, depois a de outra sessão
-const inWorktree = () => hosts(page).evaluateAll((els) => els.filter((e) => e.textContent.includes('PS ') && e.textContent.includes('loja.worktrees')).length)
+// Cada terminal novo diz a pasta onde abriu: o prompt muda de um shell para outro.
+const inWorktree = () => hosts(page).evaluateAll((els) => els.filter((e) => /PASTA:\S*loja\.worktrees/.test(e.textContent)).length)
+const askFolder = async () => {
+  await page.keyboard.type('echo "PASTA:$PWD"\r')
+  await sleep(1000)
+}
 const openTerminal = button(page, 'Abrir terminal na pasta da sessão atual')
 const terminalsBefore = await hosts(page).count()
 await openTerminal.click()
 await sleep(1500)
+await askFolder()
 check('o terminal abre na pasta da sessão atual', (await hosts(page).count()) === terminalsBefore + 1 && (await inWorktree()) === 1, `${await inWorktree()} na worktree`)
 await page.keyboard.type('echo FOCO-NO-TERMINAL\r')
 await sleep(800)
@@ -667,12 +728,15 @@ await shot(page, '7b2-terminal-da-sessao')
 await page.locator('.environment:visible .terminal-panel').first().click()
 await openTerminal.click()
 await sleep(1500)
+await askFolder()
 check('acompanha a sessão clicada', (await hosts(page).count()) === terminalsBefore + 2 && (await inWorktree()) === 1)
 
 // Git: o rodapé mostra o estado, o ícone da barra lateral faz as ações
 const footerText = async () => ((await page.locator('.usage-bar').textContent()) ?? '').replace(/\s+/g, ' ')
 const waitFooter = (text) => page.waitForFunction((t) => document.querySelector('.usage-bar')?.textContent.includes(t), text, { timeout: 8000 }).then(() => true, () => false)
 check('o rodapé mostra a branch da sessão em uso', await waitFooter('⑂ main'))
+// No Mac a pasta temporária é um atalho (/var -> /private/var): a principal não pode virar worktree.
+check('a pasta principal não aparece como worktree', !(await footerText()).includes('worktree:'), await footerText())
 writeFileSync(join(project, 'package.json'), '{ "alterado": true }\n')
 check('o rodapé conta os arquivos alterados', await waitFooter('●'), await footerText())
 check('o Git fica à direita do uso do Claude', /Contexto|Semana[\s\S]*⑂/.test(await footerText()))
@@ -745,7 +809,7 @@ const tabsBefore = await page.locator('.tab-list [role=tab]').count()
 await goHome(page)
 await button(page, 'Criar sessão').click()
 await projectRow(page, 'loja').click()
-await page.locator('.environment:visible .terminal-panel').first().waitFor()
+await page.locator('.environment:visible .terminal-panel:visible').first().waitFor()
 const quickName = await activeTabName()
 check('criar sessão abre direto, num ambiente com o nome do projeto e a data', (await page.locator('.tab-list [role=tab]').count()) === tabsBefore + 1 && /^loja \d{2}\/\d{2} \d{2}:\d{2}/.test(quickName), quickName)
 await sleep(500)
@@ -762,7 +826,7 @@ check('clique duplo na aba renomeia o ambiente', readdirSync(join(workspaceDir, 
 await goHome(page)
 await button(page, 'Criar sessão').click()
 await projectRow(page, 'loja').click()
-await page.locator('.environment:visible .terminal-panel').first().waitFor()
+await page.locator('.environment:visible .terminal-panel:visible').first().waitFor()
 await sleep(1000)
 const quick = await activeTabName()
 
@@ -777,7 +841,7 @@ const tabNames = (p) => p.locator('.tab-list [role=tab]').allTextContents()
 await page.getByRole('tab', { name: quick, exact: true }).click()
 await newTerminal(page)
 const workingIndex = (await page.locator('.environment:visible .terminal-panel').count()) - 1
-await typeIn(page, workingIndex, 'while ($true) { Write-Host TRABALHANDO; Start-Sleep -Milliseconds 300 }\r')
+await typeIn(page, workingIndex, `${sh.loop}\r`)
 await sleep(8000)
 const tabsAtClose = await tabNames(page)
 await app.close()
@@ -825,7 +889,7 @@ await sleep(800)
 const tabsAtCrash = await tabNames(page)
 // app.process() não é o processo principal no Windows: encerrá-lo deixaria o app aberto.
 const mainPid = await app.evaluate(() => process.pid)
-execFileSync('taskkill', ['/F', '/PID', String(mainPid)], { stdio: 'ignore' })
+killApp(mainPid)
 await sleep(1500)
 ;({ app, page } = await launch())
 await page.locator('.tab-list [role=tab]').first().waitFor()
@@ -851,7 +915,7 @@ await page.getByLabel('Sessões do Claude em loja').waitFor()
 check('o + das abas abre direto o novo ambiente', await page.getByRole('heading', { name: 'Novo ambiente' }).isVisible())
 await page.getByRole('checkbox', { name: 'loja', exact: true }).check()
 await button(page, 'Abrir').click()
-await page.locator('.environment:visible .terminal-panel').first().waitFor()
+await page.locator('.environment:visible .terminal-panel:visible').first().waitFor()
 check('e cria o ambiente numa aba nova', (await page.locator('.tab-list [role=tab]').count()) === tabsBeforePlus + 1)
 await shot(page, '8b-novo-ambiente-pelo-mais')
 await goHome(page)
@@ -923,7 +987,7 @@ check('a busca encontra pelo nome e pelas sessões, sem diferenciar maiúsculas'
 await shot(page, '8d-historico-ambientes')
 await historyRows.filter({ has: page.getByText('loja', { exact: true }) }).first().locator('button').first().click()
 await page.getByRole('tab', { name: 'loja', exact: true }).waitFor()
-await page.locator('.environment:visible .terminal-panel').first().waitFor()
+await page.locator('.environment:visible .terminal-panel:visible').first().waitFor()
 await sleep(1000)
 check('reabrir pelo histórico retoma as sessões', (await page.locator('.environment:visible .terminal-panel').count()) === 4 && (await page.locator('.environment:visible .terminal-stopped').count()) === 0)
 

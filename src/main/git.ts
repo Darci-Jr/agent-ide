@@ -1,4 +1,5 @@
 import { execFile } from 'node:child_process'
+import { realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { basename, relative, resolve, isAbsolute } from 'node:path'
 import type { DiffLine, FileDiff, GitAction, GitChange, GitChanges, GitStatus, GitWorktree } from '../shared/types'
@@ -15,8 +16,20 @@ function git(cwd: string, args: string[], timeout = 15000): Promise<string> {
   })
 }
 
+/**
+ * Compara pelo caminho real: o Git devolve caminhos com atalhos já resolvidos (no Mac, /var é
+ * /private/var), e a pasta do projeto pode ter sido aberta pelo atalho.
+ */
 const samePath = (a: string, b: string): boolean => {
-  const clean = (p: string): string => (process.platform === 'win32' ? resolve(p).toLowerCase() : resolve(p))
+  const clean = (p: string): string => {
+    let full = resolve(p)
+    try {
+      full = realpathSync.native(full)
+    } catch {
+      // Caminho que não existe mais: compara como veio.
+    }
+    return process.platform === 'win32' ? full.toLowerCase() : full
+  }
   return clean(a) === clean(b)
 }
 

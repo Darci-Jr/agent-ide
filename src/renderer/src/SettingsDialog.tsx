@@ -10,6 +10,8 @@ function updateText(u: UpdateState): string {
       return 'Procurando atualizações…'
     case 'current':
       return 'Você está na versão mais recente.'
+    case 'available':
+      return `Versão ${u.available} disponível. Baixe e instale por cima desta.`
     case 'downloading':
       return `Baixando a versão ${u.available ?? ''}… ${u.percent ?? 0}%`
     case 'ready':
@@ -68,9 +70,9 @@ export function SettingsDialog(props: {
           <section className="settings-version" aria-label="Versão">
             <h3>Agent IDE {update.version}</h3>
             <p role="status">{updateText(update)}</p>
-            {update.status === 'ready' ? (
+            {update.status === 'ready' || update.status === 'available' ? (
               <button type="button" className="primary" onClick={props.installUpdate}>
-                Reiniciar e atualizar
+                {update.status === 'ready' ? 'Reiniciar e atualizar' : 'Baixar a versão nova'}
               </button>
             ) : (
               <button

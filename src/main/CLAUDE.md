@@ -21,6 +21,12 @@ Quem instala ou testa o app usa perfil próprio: nos testes, defina `AGENT_IDE_U
 
 ## Armadilhas
 
+- **Menu nativo:** o padrão do Electron tem Ctrl+R (recarregar) e Ctrl+W (fechar), que valem mesmo com o foco no terminal. `menu.ts` tira o menu no Windows e no Linux e monta um próprio no Mac, sem esses atalhos.
+- **PATH no Mac e no Linux:** app aberto pelo Dock ou pelo menu não recebe o PATH do terminal. `shellEnv.ts` lê o do shell de login ao abrir; os testes não passam por ele.
+- **Pacote Intel do Mac:** o CI roda em Apple Silicon, e o npm só instala o `node-pty` do processador da máquina. O workflow instala também o `darwin-x64` antes de empacotar.
+- **Linux no CI:** o Ubuntu 24 bloqueia o sandbox do Electron; o CI libera com `sysctl kernel.apparmor_restrict_unprivileged_userns=0` e roda o e2e com `xvfb-run`. Quem usa o AppImage no Ubuntu 24 em diante tem o mesmo bloqueio (o `.deb` não); o WSL não tem, então não reproduz.
+- **Caminhos com atalho:** compare pelo caminho real (`realpathSync.native`). No Mac, `/var` é `/private/var`, e o Git devolve o caminho já resolvido.
+
 - **Pasta de dados:** fixada em `%APPDATA%/agent-ide` no início de `index.ts`. Com o `productName` do instalador ("Agent IDE"), o Electron usaria outra pasta e quem já usava perderia a pasta de trabalho, as preferências e os comandos gerais.
 - **`NODE_ENV`:** o `electron-vite preview` define `production` e os terminais herdariam; um `npm install` neles pularia as dependências de desenvolvimento. Fora do app empacotado, `index.ts` apaga a variável.
 - **Atualizador:** só liga no app empacotado e fora dos testes (`AGENT_IDE_TEST_UPDATES=1` liga de propósito em `e2e/packaged.mjs`). O `node-pty` vai em `asarUnpack` no `electron-builder.yml`, ou o terminal não carrega no app instalado.

@@ -23,6 +23,7 @@ export function TerminalPanel({ api, params }: IDockviewPanelProps<TerminalPanel
   return (
     <div
       className="terminal-panel"
+      data-session={sessionId}
       onMouseDown={() => {
         // O xterm não avisa o dockview: sem isto, a sessão clicada não vira a atual.
         api.setActive()
