@@ -355,15 +355,18 @@ const gitOption = settingsDialog.getByRole('checkbox', { name: 'Mostrar Git no r
 await gitOption.uncheck()
 const cacheOption = settingsDialog.getByRole('checkbox', { name: 'Mostrar cache da sessão no rodapé' })
 await cacheOption.uncheck()
+const tokensOption = settingsDialog.getByRole('checkbox', { name: 'Mostrar tokens da sessão no rodapé' })
+await tokensOption.uncheck()
 await sleep(300)
 check('sem nada para mostrar, o rodapé some', (await usageBar.count()) === 0)
 const savedPrefs = JSON.parse(readFileSync(join(profile, 'preferencias.json'), 'utf8'))
-check('as escolhas ficam gravadas', savedPrefs.showUsage === false && savedPrefs.showContext === false && savedPrefs.showGit === false && savedPrefs.showCache === false)
+check('as escolhas ficam gravadas', savedPrefs.showUsage === false && savedPrefs.showContext === false && savedPrefs.showGit === false && savedPrefs.showCache === false && savedPrefs.showTokens === false)
 await shot(page, '5c-configuracoes')
 await usageOption.check()
 await contextOption.check()
 await gitOption.check()
 await cacheOption.check()
+await tokensOption.check()
 await settingsDialog.getByRole('button', { name: 'Fechar', exact: true }).click()
 check('religar mostra o rodapé', await usageBar.isVisible())
 await page.locator('.environment:visible .panel-tab', { hasText: 'Sessão' }).last().getByRole('button', { name: 'Fechar', exact: true }).click()
@@ -480,15 +483,33 @@ const claudeSpec = readdirSync(join(workspaceDir, 'Ambientes'))
   .find((s) => s.adapterId === 'claude' && s.title === claudeTitle)
 await claudeTab.locator('.tab-title').click()
 const footerNow = async () => ((await page.locator('.usage-bar').textContent()) ?? '').replace(/\s+/g, ' ')
-check('sem resposta ainda, o cache aparece vazio', await page.waitForFunction(() => document.querySelector('.usage-bar')?.textContent.includes('Cache —'), null, { timeout: 8000 }).then(() => true, () => false), await footerNow())
+check(
+  'sem resposta ainda, cache e tokens aparecem vazios',
+  await page.waitForFunction(() => /Cache —.*Tokens —/.test(document.querySelector('.usage-bar')?.textContent ?? ''), null, { timeout: 8000 }).then(() => true, () => false),
+  await footerNow()
+)
 const transcriptDir = join(transcripts, claudeSpec.cwd.replace(/[^a-zA-Z0-9]/g, '-'))
 mkdirSync(transcriptDir, { recursive: true })
 const answeredAt = new Date(Date.now() - 10 * 60 * 1000).toISOString()
 writeFileSync(
   join(transcriptDir, `${claudeSpec.id}.jsonl`),
-  JSON.stringify({ type: 'assistant', timestamp: answeredAt, message: { usage: { cache_read_input_tokens: 0, cache_creation_input_tokens: 10, cache_creation: { ephemeral_1h_input_tokens: 10, ephemeral_5m_input_tokens: 0 } } } }) + '\n'
+  // A mesma resposta em duas linhas, como o Claude Code grava: os tokens contam uma vez só.
+  [1, 2]
+    .map(() =>
+      JSON.stringify({
+        type: 'assistant',
+        timestamp: answeredAt,
+        message: {
+          id: 'msg_1',
+          usage: { input_tokens: 1200, output_tokens: 300, cache_read_input_tokens: 0, cache_creation_input_tokens: 10, cache_creation: { ephemeral_1h_input_tokens: 10, ephemeral_5m_input_tokens: 0 } }
+        }
+      })
+    )
+    .join('\n') + '\n'
 )
+
 check('mostra quanto falta para o cache vencer', await page.waitForFunction(() => /Cache (49|50)min/.test(document.querySelector('.usage-bar')?.textContent ?? ''), null, { timeout: 15000 }).then(() => true, () => false), await footerNow())
+check('soma os tokens da conversa, contando cada resposta uma vez', await page.waitForFunction(() => (document.querySelector('.usage-bar')?.textContent ?? '').replace(/\s+/g, ' ').includes('Tokens 1,5 mil'), null, { timeout: 15000 }).then(() => true, () => false), await footerNow())
 await shot(page, '5g-cache')
 await claudeTab.getByRole('button', { name: 'Fechar', exact: true }).click()
 await sleep(400)

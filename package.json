@@ -1,6 +1,6 @@
 {
   "name": "agent-ide",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "IDE centrada em agentes de código, com ambientes de trabalho personalizáveis.",
   "author": "Darci Jr",
   "license": "MIT",

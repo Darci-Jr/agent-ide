@@ -62,6 +62,7 @@ const api: IdeApi = {
   onUsage: (cb) => listen('usage:changed', cb),
   getContext: (id) => invoke('context:get', id),
   getCache: (id) => invoke('cache:get', id),
+  getTokens: (id) => invoke('tokens:get', id),
   onContext: (cb) => listen('context:changed', cb),
   gitStatus: (cwd) => invoke('git:status', cwd),
   gitBranches: (cwd) => invoke('git:branches', cwd),

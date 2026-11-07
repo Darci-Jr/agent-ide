@@ -13,7 +13,8 @@ import { UsageTracker } from './usage'
 import { cleanGroups, cleanName, exportTemplate, groupsOf, instantiate, parseTemplateFile, sameGroups, slotsFromGroups, TemplateStore, templateFromEnvironment } from './templates'
 import { denyRead, getProtection, listConfigFiles, listTree, readProjectFile, writeProjectFile } from './files'
 import { listHistory } from './history'
-import { sessionCache } from './cache'
+import { sessionCache, transcriptPath } from './cache'
+import { TokenTally } from './tokens'
 import { SessionManager } from './sessions'
 import { EnvironmentStore, markInterrupted } from './store'
 import { validateProjectName, Workspace } from './workspace'
@@ -40,6 +41,7 @@ let workspace: Workspace
 let usage: UsageTracker
 let commands: CommandStore
 let updater: Updater
+const tokenTally = new TokenTally()
 
 const send = (channel: string, ...args: unknown[]): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
@@ -396,6 +398,7 @@ function registerIpc(): void {
     const env = requireStore().get(envId)
     manager.remove(id)
     usage.forget(id)
+    tokenTally.forget(id)
     env.sessions = env.sessions.filter((s) => s.id !== id)
     requireStore().flush()
   })
@@ -462,6 +465,10 @@ function registerIpc(): void {
   ipcMain.handle('usage:get', () => usage.usage())
   ipcMain.handle('prefs:get', () => usage.preferences())
   ipcMain.handle('context:get', (_e, id: string) => usage.context(id))
+  ipcMain.handle('tokens:get', async (_e, id: string) => {
+    const session = (store?.all() ?? []).flatMap((env) => env.sessions).find((s) => s.id === id)
+    return session?.adapterId === 'claude' ? tokenTally.read(session.id, await transcriptPath(session.cwd, session.id)) : null
+  })
   ipcMain.handle('cache:get', (_e, id: string) => {
     const session = (store?.all() ?? []).flatMap((env) => env.sessions).find((s) => s.id === id)
     return session?.adapterId === 'claude' ? sessionCache(session.cwd, session.id) : null

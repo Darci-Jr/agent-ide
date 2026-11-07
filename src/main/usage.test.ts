@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -7,6 +7,7 @@ import { readCacheInfo } from './cache'
 import { cleanDraft, CommandStore } from './commands'
 import { parseChanges, parseDiff, parseStatus, repositoryRoot } from './git'
 import { readPluginFolder } from './plugins'
+import { TokenTally } from './tokens'
 import { STATUS_LINE_SCRIPT, UsageTracker } from './usage'
 
 let dir: string
@@ -69,9 +70,13 @@ describe('UsageTracker', () => {
   it('lembra cada opção do rodapé e esquece a sessão removida', () => {
     const t = tracker()
     try {
-      expect(t.preferences()).toEqual({ showUsage: true, showContext: true, showCache: true, showGit: true })
-      t.savePreferences({ showUsage: true, showContext: false, showCache: false, showGit: true })
-      expect(t.preferences()).toEqual({ showUsage: true, showContext: false, showCache: false, showGit: true })
+      const all = { showUsage: true, showContext: true, showCache: true, showTokens: true, showGit: true }
+      expect(t.preferences()).toEqual(all)
+      t.savePreferences({ ...all, showContext: false, showTokens: false })
+      expect(t.preferences()).toEqual({ ...all, showContext: false, showTokens: false })
+      // Arquivo de uma versão anterior, sem os indicadores novos: eles vêm ligados.
+      writeFileSync(join(dir, 'perfil', 'preferencias.json'), JSON.stringify({ showUsage: false }))
+      expect(t.preferences()).toEqual({ ...all, showUsage: false })
       const settings = t.settingsFor('s1', dir)
       t.forget('s1')
       expect(existsSync(settings)).toBe(false)
@@ -215,5 +220,33 @@ describe('atualizações', () => {
     expect(updateError(new Error('HttpError: 404 Not Found\n"method: GET url: https://github.com/..."'))).toBe('nenhuma versão publicada encontrada')
     expect(updateError(new Error('net::ERR_INTERNET_DISCONNECTED'))).toBe('sem conexão com o servidor de atualizações')
     expect(updateError('falhou\ndetalhe')).toBe('falhou')
+  })
+})
+
+describe('tokens da sessão', () => {
+  const answer = (id: string, usage: object, text = 'ok'): string =>
+    JSON.stringify({ type: 'assistant', message: { id, content: [{ type: 'text', text }], usage } }) + '\n'
+  const usage = { input_tokens: 2, cache_creation_input_tokens: 10, cache_read_input_tokens: 100, output_tokens: 5 }
+
+  it('conta cada resposta uma vez, mesmo repetida em várias linhas', async () => {
+    const file = join(dir, 'conversa.jsonl')
+    writeFileSync(file, answer('m1', usage) + answer('m1', usage) + answer('m1', usage) + JSON.stringify({ type: 'user', message: { content: 'oi' } }) + '\n' + answer('m2', usage))
+    expect(await new TokenTally().read('s', file)).toEqual({ input: 4, cacheWrite: 20, cacheRead: 200, output: 10, total: 234, responses: 2 })
+  })
+
+  it('lê só o que entrou depois, sem estragar uma linha cortada no meio de um acento', async () => {
+    const file = join(dir, 'conversa.jsonl')
+    const tally = new TokenTally()
+    const line = answer('m1', usage, 'ação')
+    const bytes = Buffer.from(line, 'utf8')
+    const cut = bytes.indexOf(Buffer.from('ç', 'utf8')) + 1
+    writeFileSync(file, bytes.subarray(0, cut))
+    expect(await tally.read('s', file)).toBeNull()
+    appendFileSync(file, bytes.subarray(cut))
+    appendFileSync(file, answer('m2', usage))
+    expect(await tally.read('s', file)).toMatchObject({ responses: 2, total: 234 })
+    // Reescrito do zero (menor que o já lido): recomeça a conta.
+    writeFileSync(file, answer('m9', usage))
+    expect(await tally.read('s', file)).toMatchObject({ responses: 1, total: 117 })
   })
 })
