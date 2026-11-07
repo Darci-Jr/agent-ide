@@ -702,11 +702,17 @@ await sleep(300)
 check('o nome aleatório cria outra worktree', readdirSync(worktrees).length === 2 && !(await worktreeDialog.isVisible()))
 
 // Terminal na pasta da sessão atual: a da worktree, depois a de outra sessão
-const inWorktree = () => hosts(page).evaluateAll((els) => els.filter((e) => e.textContent.includes('PS ') && e.textContent.includes('loja.worktrees')).length)
+// Cada terminal novo diz a pasta onde abriu: o prompt muda de um shell para outro.
+const inWorktree = () => hosts(page).evaluateAll((els) => els.filter((e) => /PASTA:\S*loja\.worktrees/.test(e.textContent)).length)
+const askFolder = async () => {
+  await page.keyboard.type('echo "PASTA:$PWD"\r')
+  await sleep(1000)
+}
 const openTerminal = button(page, 'Abrir terminal na pasta da sessão atual')
 const terminalsBefore = await hosts(page).count()
 await openTerminal.click()
 await sleep(1500)
+await askFolder()
 check('o terminal abre na pasta da sessão atual', (await hosts(page).count()) === terminalsBefore + 1 && (await inWorktree()) === 1, `${await inWorktree()} na worktree`)
 await page.keyboard.type('echo FOCO-NO-TERMINAL\r')
 await sleep(800)
@@ -715,6 +721,7 @@ await shot(page, '7b2-terminal-da-sessao')
 await page.locator('.environment:visible .terminal-panel').first().click()
 await openTerminal.click()
 await sleep(1500)
+await askFolder()
 check('acompanha a sessão clicada', (await hosts(page).count()) === terminalsBefore + 2 && (await inWorktree()) === 1)
 
 // Git: o rodapé mostra o estado, o ícone da barra lateral faz as ações
