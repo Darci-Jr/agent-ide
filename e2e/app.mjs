@@ -93,6 +93,8 @@ export async function launch(dirs) {
   if (!visible) env.AGENT_IDE_TEST_HIDDEN = '1'
   delete env.ELECTRON_RUN_AS_NODE
   delete env.ELECTRON_RENDERER_URL
+  // Como o npm run start (electron-vite preview) abre o app.
+  env.NODE_ENV = 'production'
   const app = await _electron.launch({ executablePath: electronPath, args: [root], env, cwd: root })
   const page = await app.firstWindow()
   page.on('pageerror', (e) => check(`sem erro na página: ${e.message}`, false))

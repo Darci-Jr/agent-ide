@@ -13,14 +13,25 @@ import { UsageTracker } from './usage'
 import { cleanGroups, cleanName, exportTemplate, groupsOf, instantiate, parseTemplateFile, sameGroups, slotsFromGroups, TemplateStore, templateFromEnvironment } from './templates'
 import { denyRead, getProtection, listConfigFiles, listTree, readProjectFile, writeProjectFile } from './files'
 import { listHistory } from './history'
-import { sessionCache } from './cache'
+import { reportedTranscript, sessionCache, transcriptPath, transcriptsRoot } from './cache'
+import { TokenTally } from './tokens'
 import { SessionManager } from './sessions'
 import { conversationHolders, EnvironmentStore, markInterrupted, setConversation } from './store'
 import { validateProjectName, Workspace } from './workspace'
+import { Updater } from './updater'
+import { setAppMenu } from './menu'
+import { loadLoginPath } from './shellEnv'
 import { createWorktree } from './worktree'
 
-// Os testes usam um perfil separado e escolhem as pastas sem abrir diálogos.
-if (process.env.AGENT_IDE_USER_DATA) app.setPath('userData', process.env.AGENT_IDE_USER_DATA)
+// Os testes usam um perfil separado e escolhem as pastas sem abrir diálogos. Fora deles, a pasta
+// é sempre "agent-ide": com o nome do instalador ("Agent IDE") o Electron usaria outra pasta, e quem
+// já usava perderia a pasta de trabalho escolhida, as preferências e os comandos gerais.
+app.setPath('userData', process.env.AGENT_IDE_USER_DATA ?? join(app.getPath('appData'), 'agent-ide'))
+// O `electron-vite preview` (npm run start) define NODE_ENV=production, e os terminais da IDE herdariam:
+// um `npm install` neles pularia as dependências de desenvolvimento sem avisar.
+if (!app.isPackaged && process.env.NODE_ENV === 'production') delete process.env.NODE_ENV
+// Mac e Linux: o PATH do terminal da pessoa, para achar o claude. Os testes controlam o próprio ambiente.
+if (!process.env.AGENT_IDE_USER_DATA) loadLoginPath()
 const TEST_DIRECTORY = process.env.AGENT_IDE_TEST_DIRECTORY
 const TEST_WORKSPACE = process.env.AGENT_IDE_TEST_WORKSPACE
 const TEST_PROJECT_PARENT = process.env.AGENT_IDE_TEST_PROJECT_PARENT
@@ -33,6 +44,8 @@ let templates: TemplateStore | null = null
 let workspace: Workspace
 let usage: UsageTracker
 let commands: CommandStore
+let updater: Updater
+const tokenTally = new TokenTally()
 
 const send = (channel: string, ...args: unknown[]): void => {
   if (win && !win.isDestroyed()) win.webContents.send(channel, ...args)
@@ -140,6 +153,9 @@ function registerIpc(): void {
   ipcMain.handle('adapters:list', () => listAdapters())
 
   ipcMain.handle('workspace:get', () => workspace.dir)
+  ipcMain.handle('update:get', () => updater.get())
+  ipcMain.handle('update:check', () => updater.check())
+  ipcMain.handle('update:install', () => updater.install())
   ipcMain.handle('workspace:choose', async () => {
     if (TEST_WORKSPACE) {
       useWorkspace(TEST_WORKSPACE)
@@ -393,6 +409,7 @@ function registerIpc(): void {
     const env = requireStore().get(envId)
     manager.remove(id)
     usage.forget(id)
+    tokenTally.forget(id)
     env.sessions = env.sessions.filter((s) => s.id !== id)
     requireStore().flush()
   })
@@ -459,14 +476,20 @@ function registerIpc(): void {
   ipcMain.handle('usage:get', () => usage.usage())
   ipcMain.handle('prefs:get', () => usage.preferences())
   ipcMain.handle('context:get', (_e, id: string) => usage.context(id))
-  ipcMain.handle('cache:get', (_e, id: string) => {
+  /** Transcript da conversa que está na sessão do Claude agora; muda com /clear ou /resume. */
+  const currentTranscript = async (id: string): Promise<string | null> => {
     const session = (store?.all() ?? []).flatMap((env) => env.sessions).find((s) => s.id === id)
     if (session?.adapterId !== 'claude') return null
-    const current = usage.conversation(session.id)
     const conversationId = session.conversationId ?? session.id
+    const reported = usage.conversation(session.id)
     // O transcript informado só vale se for da conversa que a sessão tem agora.
-    return sessionCache(session.cwd, conversationId, current?.conversationId === conversationId ? current.transcriptPath : null)
-  })
+    return (
+      reportedTranscript(transcriptsRoot(), reported?.conversationId === conversationId ? reported.transcriptPath : null) ??
+      (await transcriptPath(session.cwd, conversationId))
+    )
+  }
+  ipcMain.handle('tokens:get', async (_e, id: string) => tokenTally.read(id, await currentTranscript(id)))
+  ipcMain.handle('cache:get', async (_e, id: string) => sessionCache(await currentTranscript(id)))
   ipcMain.handle('prefs:save', (_e, prefs: Preferences) => usage.savePreferences(prefs))
 
   ipcMain.handle('files:tree', (_e, cwd: string) => listTree(cwd))
@@ -520,6 +543,7 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
+  setAppMenu()
   if (!process.env.ELECTRON_RENDERER_URL) {
     electronSession.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({
@@ -553,11 +577,14 @@ void app.whenReady().then(() => {
       send('session:states', states)
     }
   })
+  updater = new Updater((state) => send('update:changed', state))
   registerIpc()
   createWindow()
+  updater.start()
 })
 
 app.on('window-all-closed', () => {
+  updater?.dispose()
   manager?.dispose()
   usage?.dispose()
   store?.flush()

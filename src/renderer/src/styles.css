@@ -67,7 +67,7 @@ body,
 body {
   background: var(--board);
   color: var(--text);
-  font-family: Bahnschrift, 'Segoe UI', system-ui, sans-serif;
+  font-family: Bahnschrift, 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Ubuntu, Cantarell, sans-serif;
   font-size: 14px;
   overflow: hidden;
 }
@@ -395,7 +395,7 @@ button:disabled {
 .plugin-meta {
   flex: none;
   color: var(--muted);
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
   font-size: 12px;
 }
 
@@ -529,7 +529,7 @@ button:disabled {
 
 .command-text code,
 .mono {
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
   font-size: 12px;
 }
 
@@ -590,7 +590,7 @@ button:disabled {
   gap: 10px;
   padding-left: 14px;
   border-left: 1px solid var(--line);
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
 }
 
 .git-branch {
@@ -654,7 +654,7 @@ button:disabled {
   padding: 5px 8px;
   background: transparent;
   border: 0;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
   font-size: 12px;
   text-align: left;
 }
@@ -700,7 +700,7 @@ button:disabled {
 
 .git-worktree-name small {
   color: var(--muted);
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
 }
 
 .git-worktrees li.on .git-worktree-name {
@@ -1028,7 +1028,7 @@ button:disabled {
   background: transparent;
   border: 0;
   border-radius: 2px;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
   font-size: 12.5px;
   text-align: left;
   text-overflow: ellipsis;
@@ -1064,7 +1064,7 @@ button:disabled {
   flex: 1;
   min-width: 0;
   overflow: hidden;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
   font-size: 12.5px;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1145,7 +1145,7 @@ button:disabled {
   padding: 1px 4px;
   background: var(--hover);
   border-radius: 3px;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
   font-size: 0.9em;
 }
 
@@ -1226,7 +1226,7 @@ button:disabled {
 .worktree-preview dd {
   margin: 0;
   overflow-wrap: anywhere;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
 }
 
 .modal .worktree-error {
@@ -1292,7 +1292,8 @@ button:disabled {
   border-radius: 3px;
   font-size: 13px;
   pointer-events: none;
-  white-space: nowrap;
+  /* Respeita quebras de linha da dica e quebra textos longos na largura máxima. */
+  white-space: pre-line;
 }
 
 /* Tela inicial */
@@ -1578,7 +1579,7 @@ button:disabled {
 .diff-counts {
   flex: none;
   color: var(--muted);
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
   font-size: 11px;
 }
 
@@ -1605,7 +1606,7 @@ button:disabled {
 .diff-lines {
   margin: 0;
   min-width: max-content;
-  font-family: 'Cascadia Mono', Consolas, monospace;
+  font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
   font-size: 12px;
   line-height: 1.5;
   tab-size: 4;
@@ -1841,4 +1842,25 @@ button:disabled {
 .home-row.on {
   border-color: var(--accent);
   box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.update-ready {
+  color: var(--accent);
+}
+
+.settings-version {
+  margin: 18px 0 4px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.settings-version h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+}
+
+.settings-version p {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 13px;
 }

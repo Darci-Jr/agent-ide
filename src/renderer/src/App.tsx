@@ -1,6 +1,6 @@
 import type { DockviewApi } from 'dockview-react'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode } from 'react'
-import type { AdapterInfo, CacheInfo, ClaudeUsage, CustomCommand, Environment, GitStatus, Preferences, SessionContext, SessionState } from '../../shared/types'
+import type { AdapterInfo, UpdateState, CacheInfo, TokenTotals, ClaudeUsage, CustomCommand, Environment, GitStatus, Preferences, SessionContext, SessionState } from '../../shared/types'
 import { SettingsDialog } from './SettingsDialog'
 import { Overlay } from './Overlay'
 import { UsageBar } from './UsageBar'
@@ -59,7 +59,8 @@ export function App(): ReactNode {
     })
   }, [])
   const [usage, setUsage] = useState<ClaudeUsage | null>(null)
-  const [prefs, setPrefs] = useState<Preferences>({ showUsage: true, showContext: true, showCache: true, showGit: true })
+  const [update, setUpdate] = useState<UpdateState | null>(null)
+  const [prefs, setPrefs] = useState<Preferences>({ showUsage: true, showContext: true, showCache: true, showTokens: true, showGit: true })
   // Sessão em uso em cada ambiente, e o contexto já lido de cada sessão.
   const [activeSessions, setActiveSessions] = useState<Record<string, string>>({})
   const [contexts, setContexts] = useState<Record<string, SessionContext | null>>({})
@@ -105,11 +106,14 @@ export function App(): ReactNode {
     void ide.listSessionStates().then(setStateList)
     void ide.getUsage().then(setUsage)
     void ide.getPreferences().then(setPrefs)
+    void ide.getUpdate().then(setUpdate)
+    const offUpdate = ide.onUpdate(setUpdate)
     const offUsage = ide.onUsage(setUsage)
     const offContext = ide.onContext((sessionId, context) => setContexts((all) => ({ ...all, [sessionId]: context })))
     const offStates = ide.onSessionStates(setStateList)
     return () => {
       offUsage()
+      offUpdate()
       offContext()
       offStates()
     }
@@ -159,6 +163,27 @@ export function App(): ReactNode {
       clearInterval(timer)
     }
   }, [cacheSessionId])
+
+  // Tokens da conversa inteira da sessão do Claude em uso, somados do transcript.
+  const [tokens, setTokens] = useState<TokenTotals | null>(null)
+  const tokensSessionId = prefs.showTokens ? (activeClaude?.id ?? null) : null
+  useEffect(() => {
+    setTokens(null)
+    if (!tokensSessionId) return
+    let alive = true
+    const read = (): void => {
+      ide.getTokens(tokensSessionId).then(
+        (totals) => alive && setTokens(totals),
+        () => alive && setTokens(null)
+      )
+    }
+    read()
+    const timer = setInterval(read, 10000)
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [tokensSessionId])
 
   // Git da pasta da sessão em uso; sem sessão escolhida, o do projeto do ambiente.
   const gitCwd = activeSession?.cwd ?? active?.cwd ?? null
@@ -311,6 +336,19 @@ export function App(): ReactNode {
     const question = running ? `Fechar o ambiente ${env.name}? As sessões em execução serão encerradas.` : `Fechar o ambiente ${env.name}?`
     if (!window.confirm(question)) return
     void closeSaved(env)
+  }
+
+  /** Só a pedido: o app fecha, instala e reabre; as sessões que rodavam voltam sem continuar a tarefa. */
+  const installUpdate = (): void => {
+    if (update?.status === 'available') {
+      void ide.installUpdate()
+      return
+    }
+    if (!update || update.status !== 'ready') return
+    const unsaved = unsavedPanels.size > 0 ? ' Há arquivos com alterações não salvas, que serão descartadas.' : ''
+    if (!window.confirm(`Reiniciar para atualizar para a versão ${update.available}? As sessões voltam abertas, sem continuar o que faziam.${unsaved}`)) return
+    unsavedPanels.clear()
+    void ide.installUpdate()
   }
 
   const renameEnvironment = (env: Environment, name: string): void => {
@@ -475,6 +513,16 @@ export function App(): ReactNode {
             }}
           />
         )}
+        {(update?.status === 'ready' || update?.status === 'available') && (
+          <IconButton
+            icon="download"
+            label={
+              update.status === 'ready' ? `Versão ${update.available} pronta. Clique para reiniciar e atualizar` : `Versão ${update.available} disponível. Clique para baixar`
+            }
+            className="update-ready"
+            onClick={installUpdate}
+          />
+        )}
         <IconButton icon="openFolder" label="Abrir pasta da IDE" onClick={() => void ide.openWorkspaceFolder()} />
       </header>
 
@@ -515,19 +563,20 @@ export function App(): ReactNode {
         ))}
       </main>
 
-      {(prefs.showUsage || prefs.showContext || prefs.showCache || prefs.showGit) && (
+      {(prefs.showUsage || prefs.showContext || prefs.showCache || prefs.showTokens || prefs.showGit) && (
         <UsageBar
           usage={usage}
           context={activeClaude ? { title: activeClaude.title, data: contexts[activeClaude.id] ?? null } : null}
           showUsage={prefs.showUsage}
           showContext={prefs.showContext}
           cache={cacheSessionId ? { data: cache } : null}
+          tokens={tokensSessionId ? { data: tokens } : null}
           git={prefs.showGit && activeId ? git : null}
         />
       )}
 
       {modal?.kind === 'settings' && (
-        <SettingsDialog prefs={prefs} changePrefs={changePrefs} onClose={() => setModal(null)} />
+        <SettingsDialog prefs={prefs} changePrefs={changePrefs} update={update} installUpdate={installUpdate} onClose={() => setModal(null)} />
       )}
 
       {modal?.kind === 'template' && (

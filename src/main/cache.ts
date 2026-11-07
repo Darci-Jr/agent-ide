@@ -48,7 +48,7 @@ export function readCacheInfo(text: string): CacheInfo | null {
   return { lastAt, ttlMs: ttl, expiresAt: lastAt + ttl }
 }
 
-async function transcriptPath(cwd: string, sessionId: string): Promise<string | null> {
+export async function transcriptPath(cwd: string, sessionId: string): Promise<string | null> {
   const root = transcriptsRoot()
   const encoded = cwd.replace(/[^a-zA-Z0-9]/g, '-')
   const direct = join(root, encoded, `${sessionId}.jsonl`)
@@ -69,12 +69,8 @@ export function reportedTranscript(root: string, reported: string | null): strin
   return rel && !rel.startsWith('..') && !isAbsolute(rel) ? resolve(reported) : null
 }
 
-/**
- * `reported` é o transcript da conversa atual, que muda com /clear ou /resume. Sem ele, antes da
- * primeira resposta, vale o transcript com o id da sessão.
- */
-export async function sessionCache(cwd: string, sessionId: string, reported: string | null = null): Promise<CacheInfo | null> {
-  const path = reportedTranscript(transcriptsRoot(), reported) ?? (await transcriptPath(cwd, sessionId))
+/** Cache lido do fim do transcript da conversa atual. */
+export async function sessionCache(path: string | null): Promise<CacheInfo | null> {
   if (!path) return null
   const file = await open(path, 'r').catch(() => null)
   if (!file) return null

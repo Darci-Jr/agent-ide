@@ -57,9 +57,10 @@ await page.waitForSelector('.terminal-host')
 check('a sessão rápida abre o Claude', await waitForText(page, /trust|Claude Code/i, 20000))
 if (/trust/i.test(await terminalText(page))) {
   await page.locator('.terminal-panel').first().click()
-  // A opção selecionada por padrão é recusar.
+  // A opção selecionada por padrão é recusar. Confirma só depois de ver "Yes" selecionado:
+  // com uma espera fixa curta, o Enter chegava antes e confirmava "No, exit".
   await page.keyboard.press('ArrowDown')
-  await sleep(200)
+  check('seleciona confiar na pasta', await waitForText(page, /❯\s*Yes, I trust/, 5000))
   await page.keyboard.press('Enter')
   await sleep(3000)
 }
@@ -75,6 +76,11 @@ const usageShown = await page
   .waitForFunction(() => /5h \S+ \d+%[\s\S]*Semana \S+ \d+%[\s\S]*Contexto \S+ \d+%/.test(document.querySelector('.usage-bar')?.textContent ?? ''), null, { timeout: 20000 })
   .then(() => true, () => false)
 check('o rodapé mostra o uso real da conta', usageShown, (await page.locator('.usage-bar').textContent()).replace(/\s+/g, ' '))
+// Tokens vêm do transcript, depois da primeira resposta.
+const tokensShown = await page
+  .waitForFunction(() => /Tokens \d[\d,.]* ?(mil|mi)?/.test((document.querySelector('.usage-bar')?.textContent ?? '').replace(/\s+/g, ' ')), null, { timeout: 20000 })
+  .then(() => true, () => false)
+check('o rodapé mostra os tokens reais da sessão', tokensShown, (await page.locator('.usage-bar').textContent()).replace(/\s+/g, ' '))
 await sleep(1500)
 await page.screenshot({ path: join(here, '9-claude.png') })
 check('grava o transcript', findTranscripts().length === 1)

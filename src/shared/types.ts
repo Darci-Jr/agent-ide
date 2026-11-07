@@ -197,6 +197,29 @@ export interface SessionContext {
   updatedAt: number
 }
 
+/** Tokens da conversa inteira, somados do transcript. */
+export interface TokenTotals {
+  input: number
+  cacheWrite: number
+  cacheRead: number
+  output: number
+  total: number
+  responses: number
+}
+
+/** Atualização do app instalado. `disabled` em desenvolvimento e nos testes. */
+export interface UpdateState {
+  /** Versão em uso. */
+  version: string
+  /** `available`: versão nova que precisa ser baixada à mão (Mac sem assinatura). */
+  status: 'disabled' | 'idle' | 'checking' | 'current' | 'available' | 'downloading' | 'ready' | 'error'
+  /** Versão nova encontrada ou já baixada. */
+  available?: string
+  percent?: number
+  checkedAt?: number
+  error?: string
+}
+
 /** Cache do prompt da conversa: cada resposta renova o prazo. */
 export interface CacheInfo {
   /** Última resposta que leu ou criou cache. */
@@ -211,6 +234,7 @@ export interface Preferences {
   showUsage: boolean
   showContext: boolean
   showCache: boolean
+  showTokens: boolean
   showGit: boolean
 }
 
@@ -423,6 +447,8 @@ export interface IdeApi {
   getContext(sessionId: string): Promise<SessionContext | null>
   /** Lido do transcript da sessão do Claude; nulo antes da primeira resposta. */
   getCache(sessionId: string): Promise<CacheInfo | null>
+  /** Somados do transcript; nulo antes da primeira resposta. */
+  getTokens(sessionId: string): Promise<TokenTotals | null>
   onContext(cb: (sessionId: string, context: SessionContext | null) => void): () => void
   gitStatus(cwd: string): Promise<GitStatus | null>
   gitBranches(cwd: string): Promise<string[]>
@@ -437,6 +463,12 @@ export interface IdeApi {
   gitFileDiff(cwd: string, path: string): Promise<FileDiff>
   /** Alguma ação de Git terminou: o rodapé relê o estado. */
   onGitChanged(cb: () => void): () => void
+
+  getUpdate(): Promise<UpdateState>
+  checkUpdate(): Promise<UpdateState>
+  /** Reinicia na versão já baixada; no Mac, abre a página para baixar a nova. */
+  installUpdate(): Promise<void>
+  onUpdate(cb: (state: UpdateState) => void): () => void
   /** Gerais e do projeto, nessa ordem. */
   listCommands(projectId: string): Promise<CustomCommand[]>
   saveCommand(projectId: string, draft: CommandDraft, id?: string): Promise<CustomCommand>
