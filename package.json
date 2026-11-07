@@ -1,6 +1,6 @@
 {
   "name": "agent-ide",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "IDE centrada em agentes de código, com ambientes de trabalho personalizáveis.",
   "author": "Darci Jr",
   "license": "MIT",
@@ -8,6 +8,7 @@
     "type": "git",
     "url": "https://github.com/Darci-Jr/agent-ide.git"
   },
+  "homepage": "https://github.com/Darci-Jr/agent-ide",
   "main": "out/main/index.js",
   "scripts": {
     "dev": "electron-vite dev",
@@ -16,7 +17,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "e2e": "npm run build && node e2e/smoke.mjs",
-    "dist": "npm run build && electron-builder --win --publish never"
+    "dist": "npm run build && electron-builder --publish never"
   },
   "overrides": {
     "dompurify": "$dompurify"

@@ -19,6 +19,8 @@ import { SessionManager } from './sessions'
 import { EnvironmentStore, markInterrupted } from './store'
 import { validateProjectName, Workspace } from './workspace'
 import { Updater } from './updater'
+import { setAppMenu } from './menu'
+import { loadLoginPath } from './shellEnv'
 import { createWorktree } from './worktree'
 
 // Os testes usam um perfil separado e escolhem as pastas sem abrir diálogos. Fora deles, a pasta
@@ -28,6 +30,8 @@ app.setPath('userData', process.env.AGENT_IDE_USER_DATA ?? join(app.getPath('app
 // O `electron-vite preview` (npm run start) define NODE_ENV=production, e os terminais da IDE herdariam:
 // um `npm install` neles pularia as dependências de desenvolvimento sem avisar.
 if (!app.isPackaged && process.env.NODE_ENV === 'production') delete process.env.NODE_ENV
+// Mac e Linux: o PATH do terminal da pessoa, para achar o claude. Os testes controlam o próprio ambiente.
+if (!process.env.AGENT_IDE_USER_DATA) loadLoginPath()
 const TEST_DIRECTORY = process.env.AGENT_IDE_TEST_DIRECTORY
 const TEST_WORKSPACE = process.env.AGENT_IDE_TEST_WORKSPACE
 const TEST_PROJECT_PARENT = process.env.AGENT_IDE_TEST_PROJECT_PARENT
@@ -522,6 +526,7 @@ function createWindow(): void {
 }
 
 void app.whenReady().then(() => {
+  setAppMenu()
   if (!process.env.ELECTRON_RENDERER_URL) {
     electronSession.defaultSession.webRequest.onHeadersReceived((details, callback) => {
       callback({

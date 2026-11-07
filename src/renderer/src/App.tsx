@@ -339,6 +339,10 @@ export function App(): ReactNode {
 
   /** Só a pedido: o app fecha, instala e reabre; as sessões que rodavam voltam sem continuar a tarefa. */
   const installUpdate = (): void => {
+    if (update?.status === 'available') {
+      void ide.installUpdate()
+      return
+    }
     if (!update || update.status !== 'ready') return
     const unsaved = unsavedPanels.size > 0 ? ' Há arquivos com alterações não salvas, que serão descartadas.' : ''
     if (!window.confirm(`Reiniciar para atualizar para a versão ${update.available}? As sessões voltam abertas, sem continuar o que faziam.${unsaved}`)) return
@@ -508,8 +512,15 @@ export function App(): ReactNode {
             }}
           />
         )}
-        {update?.status === 'ready' && (
-          <IconButton icon="download" label={`Versão ${update.available} pronta. Clique para reiniciar e atualizar`} className="update-ready" onClick={installUpdate} />
+        {(update?.status === 'ready' || update?.status === 'available') && (
+          <IconButton
+            icon="download"
+            label={
+              update.status === 'ready' ? `Versão ${update.available} pronta. Clique para reiniciar e atualizar` : `Versão ${update.available} disponível. Clique para baixar`
+            }
+            className="update-ready"
+            onClick={installUpdate}
+          />
         )}
         <IconButton icon="openFolder" label="Abrir pasta da IDE" onClick={() => void ide.openWorkspaceFolder()} />
       </header>
