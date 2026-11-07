@@ -12,5 +12,6 @@ export interface AgentAdapter {
   label: string
   /** Comando procurado no PATH. Sem ele, o adaptador está sempre disponível. */
   detectCommand?: string
-  spawn(opts: { sessionId: string; started: boolean; cwd: string }): Promise<SpawnSpec>
+  /** `conversationId` é a conversa a retomar; sem ela, vale o `sessionId`. */
+  spawn(opts: { sessionId: string; conversationId?: string; started: boolean; cwd: string }): Promise<SpawnSpec>
 }

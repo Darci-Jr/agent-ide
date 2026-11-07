@@ -3,7 +3,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { button, check, dialogs, finish, launch, prepare, shot, sleep } from './app.mjs'
+import { button, check, dialogs, finish, launch, prepare, shot, sleep, waitFor } from './app.mjs'
 
 const dirs = prepare()
 const { base, project, profile, workspaceDir, projectsParent, transcripts, exchange, pluginState, git } = dirs
@@ -404,6 +404,35 @@ writeFileSync(
 )
 check('mostra quanto falta para o cache vencer', await page.waitForFunction(() => /Cache (49|50)min/.test(document.querySelector('.usage-bar')?.textContent ?? ''), null, { timeout: 15000 }).then(() => true, () => false), await footerNow())
 await shot(page, '5g-cache')
+// /clear: a conversa troca de id e de transcript, informados pela linha de status.
+const cleared = join(transcriptDir, 'conversa-depois-do-clear.jsonl')
+writeFileSync(
+  cleared,
+  [
+    { type: 'user', cwd: claudeSpec.cwd, message: { content: 'oi' } },
+    { type: 'ai-title', aiTitle: 'Conversa depois do clear' },
+    { type: 'assistant', timestamp: new Date(Date.now() - 60 * 1000).toISOString(), message: { usage: { cache_read_input_tokens: 0, cache_creation_input_tokens: 10, cache_creation: { ephemeral_1h_input_tokens: 10, ephemeral_5m_input_tokens: 0 } } } }
+  ].map((l) => JSON.stringify(l)).join('\n') + '\n'
+)
+writeFileSync(join(profile, 'contexto', `${claudeSpec.id}.conversa`), JSON.stringify({ conversationId: 'conversa-depois-do-clear', transcriptPath: cleared }))
+check('depois de um /clear, o cache segue a conversa nova', await page.waitForFunction(() => /Cache (58|59)min/.test(document.querySelector('.usage-bar')?.textContent ?? ''), null, { timeout: 15000 }).then(() => true, () => false), await footerNow())
+const savedConversation = () =>
+  readdirSync(join(workspaceDir, 'Ambientes'))
+    .flatMap((f) => JSON.parse(readFileSync(join(workspaceDir, 'Ambientes', f), 'utf8')).sessions)
+    .find((s) => s.id === claudeSpec.id)?.conversationId
+check('a sessão guarda a conversa nova, para retomar a certa', await waitFor(() => savedConversation() === 'conversa-depois-do-clear'), String(savedConversation()))
+// No histórico, a conversa nova está aberta nesta sessão: leva a ela em vez de abrir outra.
+const envTabsBefore = await page.locator('.tab-list [role=tab]').count()
+const activeBefore = await page.locator('.tab-list .tab.on [role=tab]').textContent()
+await goHome(page)
+await button(page, 'Carregar sessão').click()
+await projectRow(page, 'loja').click()
+await page.locator('.home-row', { hasText: 'Conversa depois do clear' }).locator('button').first().click()
+await page.locator('.environment:visible').waitFor()
+check(
+  'carregar a conversa nova leva à sessão onde ela está',
+  (await page.locator('.tab-list [role=tab]').count()) === envTabsBefore && (await page.locator('.tab-list .tab.on [role=tab]').textContent()) === activeBefore
+)
 await claudeTab.getByRole('button', { name: 'Fechar', exact: true }).click()
 await sleep(400)
 

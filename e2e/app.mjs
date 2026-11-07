@@ -14,6 +14,17 @@ const root = dirname(here)
 const electronPath = createRequire(import.meta.url)('electron')
 export const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
 const visible = process.argv.includes('--visivel')
+/** Espera uma condição fora da página, como um arquivo gravado pelo app. */
+export const waitFor = async (condition, ms = 5000) => {
+  for (const end = Date.now() + ms; Date.now() < end; await sleep(100)) {
+    try {
+      if (await condition()) return true
+    } catch {
+      // Arquivo no meio da gravação: tenta de novo.
+    }
+  }
+  return false
+}
 
 // Pastas de teste: um projeto "loja" com Git, transcripts e plugins falsos.
 // O e2e nunca escreve no ~/.claude de verdade nem mexe nos plugins de verdade.

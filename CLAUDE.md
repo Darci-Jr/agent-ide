@@ -61,6 +61,7 @@ Um novo canal de IPC passa por três arquivos: `shared/types.ts`, `preload/index
 - Projeto novo nunca vai para dentro da pasta de trabalho: a pessoa dá o nome e escolhe onde criar, e o seletor abre no último lugar usado.
 - A IDE volta como estava: as mesmas abas, o mesmo layout e a mesma aba ativa, inclusive depois de uma queda. Sem abas abertas, abre na tela inicial, que oferece Retomar o último ambiente.
 - Sessões que rodavam são retomadas sozinhas, mas sem continuar a tarefa. Ambiente novo, inclusive de template, já abre com as sessões iniciadas.
+- A sessão segue a conversa: depois de um `/clear` ou `/resume`, retoma, mostra o cache e aparece no histórico pela conversa nova. A anterior fica no histórico e abre numa sessão própria.
 - Sessão que trabalhava quando foi encerrada mostra "Atenção" até a pessoa digitar nela ou dispensar.
 - O + logo após as abas de ambiente leva direto ao Novo ambiente.
 - Abas de ambiente se reordenam arrastando. Fixadas (alfinete) ficam sempre à esquerda; arrastar não cruza entre fixadas e demais. O fixado fica no ambiente e não vai para o template.

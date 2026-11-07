@@ -251,8 +251,8 @@ export function App(): ReactNode {
   }
 
   /** Uma conversa já aberta não pode rodar duas vezes: leva à aba onde ela está. */
-  const showOpenSession = (sessionId: string): boolean => {
-    const holder = openEnvs.find((env) => env.sessions.some((s) => s.id === sessionId))
+  const showOpenEnvironment = (environmentId: string): boolean => {
+    const holder = openEnvs.find((env) => env.id === environmentId)
     if (holder) setActiveId(holder.id)
     return Boolean(holder)
   }
@@ -487,7 +487,7 @@ export function App(): ReactNode {
             openIds={openIds}
             onOpen={openEnvironment}
             onResume={resumeEnvironment}
-            showOpenSession={showOpenSession}
+            showOpenEnvironment={showOpenEnvironment}
             onDeleted={(id) => setEnvironments((list) => list.filter((e) => e.id !== id))}
             toast={setToast}
           />

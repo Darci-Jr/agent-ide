@@ -15,7 +15,7 @@ import { denyRead, getProtection, listConfigFiles, listTree, readProjectFile, wr
 import { listHistory } from './history'
 import { sessionCache } from './cache'
 import { SessionManager } from './sessions'
-import { EnvironmentStore, markInterrupted } from './store'
+import { conversationHolders, EnvironmentStore, markInterrupted, setConversation } from './store'
 import { validateProjectName, Workspace } from './workspace'
 import { createWorktree } from './worktree'
 
@@ -184,11 +184,18 @@ function registerIpc(): void {
     return dir ? workspace.addExisting(dir) : null
   })
   ipcMain.handle('project:remove', (_e, id: string) => workspace.remove(id))
-  ipcMain.handle('history:list', (_e, id: string) => listHistory(workspace.get(id).path))
+  ipcMain.handle('history:list', async (_e, id: string) => {
+    const holders = conversationHolders(store?.all() ?? [])
+    return (await listHistory(workspace.get(id).path)).map((entry) => {
+      const holder = holders.get(entry.sessionId)
+      return holder ? { ...entry, holder } : entry
+    })
+  })
   ipcMain.handle('history:open', async (_e, projectId: string, entry: HistoryEntry) => {
     const project = workspace.get(projectId)
     if (!existsSync(entry.cwd)) throw new Error(`A pasta desta conversa não existe mais: ${entry.cwd}`)
-    const session = { id: entry.sessionId, adapterId: 'claude', title: entry.title, cwd: entry.cwd, started: true }
+    // Id próprio: o da conversa pode já ser o id de outra sessão, que depois de um /clear está noutra conversa.
+    const session = { id: randomUUID(), conversationId: entry.sessionId, adapterId: 'claude', title: entry.title, cwd: entry.cwd, started: true }
     const env: Environment = {
       id: randomUUID(),
       name: uniqueName(`${project.name} ${dateLabel()}`),
@@ -454,7 +461,11 @@ function registerIpc(): void {
   ipcMain.handle('context:get', (_e, id: string) => usage.context(id))
   ipcMain.handle('cache:get', (_e, id: string) => {
     const session = (store?.all() ?? []).flatMap((env) => env.sessions).find((s) => s.id === id)
-    return session?.adapterId === 'claude' ? sessionCache(session.cwd, session.id) : null
+    if (session?.adapterId !== 'claude') return null
+    const current = usage.conversation(session.id)
+    const conversationId = session.conversationId ?? session.id
+    // O transcript informado só vale se for da conversa que a sessão tem agora.
+    return sessionCache(session.cwd, conversationId, current?.conversationId === conversationId ? current.transcriptPath : null)
   })
   ipcMain.handle('prefs:save', (_e, prefs: Preferences) => usage.savePreferences(prefs))
 
@@ -525,7 +536,10 @@ void app.whenReady().then(() => {
   usage = new UsageTracker(
     app.getPath('userData'),
     (current) => send('usage:changed', current),
-    (sessionId, context) => send('context:changed', sessionId, context)
+    (sessionId, context) => send('context:changed', sessionId, context),
+    (sessionId, conversation) => {
+      if (store && setConversation(store.all(), sessionId, conversation.conversationId)) store.flush()
+    }
   )
   setClaudeSettings((sessionId, cwd) => usage.settingsFor(sessionId, cwd))
   commands = new CommandStore(join(app.getPath('userData'), 'comandos.json'), () =>
