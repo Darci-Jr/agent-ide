@@ -48,6 +48,7 @@ Atualizar os `CLAUDE.md` faz parte da tarefa: faça no mesmo commit da mudança 
 - **Decisão nova do usuário?** Registre em "Decisões de produto", inclusive quando ela substituir outra.
 - **Descobriu uma armadilha?** Anote se ela custou tempo e não dá para deduzir lendo o código. O que vale para uma área só vai em `src/main/CLAUDE.md` ou `src/renderer/CLAUDE.md`.
 - **Instrução contradiz o código?** Confie no código, verifique e corrija o arquivo. Se a dúvida for sobre uma decisão de produto, pergunte ao usuário.
+- **Funcionalidade nova ou mudada?** Atualize a página dela em `docs/`. O `README.md` só traz as funções principais e links para essas páginas.
 - **Formato interno do Claude Code:** ao mexer nessas partes, confira em um transcript real se o que está anotado continua valendo.
 
 Mantenha os arquivos curtos: nada de histórico de mudanças, que fica no Git, nem descrição do que o código já mostra. Ao adicionar algo, veja se outro item pode sair.
