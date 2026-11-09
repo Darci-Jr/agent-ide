@@ -1,83 +1,74 @@
 # Agent IDE
 
-IDE centrada em agentes de código. Em vez de um editor com um chat ao lado, cada projeto
-tem ambientes de trabalho que você monta conforme a tarefa: várias sessões em grade, ou
-uma sessão ao lado de um documento para pensar junto com o agente.
+**Uma IDE feita para trabalhar com agentes de código, não com um editor.**
 
-Hoje funciona com o Claude Code e com qualquer CLI rodando em uma sessão de terminal comum.
-Testado apenas no Windows.
+Em vez de um editor com um chat ao lado, você monta ambientes de trabalho: várias sessões do
+Claude Code em grade, terminais ao lado, um documento aberto para pensar junto com o agente.
+Cada sessão é a CLI real do agente rodando em um terminal de verdade: nada é reimplementado,
+e tudo o que funciona no seu terminal funciona aqui.
+
+Windows, Linux e Mac (experimental). Open source, licença MIT.
+
+## Principais funções
+
+### Ambientes de trabalho
+
+Cada aba é um ambiente com seus projetos, sessões e layout. Abra quantas sessões do Claude e
+terminais quiser, arraste, divida e agrupe os painéis, e destaque uma sessão sem reiniciar nada.
+Um ambiente pode reunir vários projetos, e arquivos, Git e sessões novas seguem o projeto da
+sessão em uso. [Mais sobre ambientes →](docs/ambientes.md)
+
+### Templates
+
+Salve um ambiente como molde (projetos, quantas sessões e terminais, layout) e abra um igual
+com um clique. Exporte para um arquivo e compartilhe com o time: o arquivo leva os projetos
+pelo nome, sem conversas, segredos nem caminhos da sua máquina.
+[Mais sobre templates →](docs/ambientes.md#templates)
+
+### A IDE volta como estava
+
+Feche o app, ou deixe-o cair, e ele reabre com as mesmas abas, o mesmo layout e as sessões
+retomadas, sem continuar sozinhas a tarefa. Uma sessão que trabalhava quando foi encerrada
+mostra **Atenção** para você conferir. A sessão segue a conversa depois de `/clear` e `/resume`,
+e o histórico de cada projeto lista todas elas. [Mais sobre sessões →](docs/sessoes.md)
+
+### O que importa, à vista
+
+O rodapé mostra o uso do Claude (5 horas e semana), o contexto, o tempo até o cache vencer e os
+tokens da sessão em uso, além da branch e das alterações do Git. Cada indicador pode ser
+desligado. [Mais sobre o rodapé →](docs/rodape.md)
+
+## Outras funcionalidades
+
+- [Git e worktrees](docs/git.md): troca de branch, pull, push, diff das alterações e sessões em
+  worktree, sem nunca forçar nada.
+- [Comandos personalizados](docs/comandos-e-plugins.md#comandos): botões que rodam seus comandos
+  (`npm run dev`, testes, deploy) em um terminal novo.
+- [Plugins do Claude Code](docs/comandos-e-plugins.md#plugins): ative e desative sem sair da IDE.
+- [Arquivos e segredos](docs/arquivos-e-segredos.md): árvore do projeto, editor, Markdown ao vivo
+  e bloqueio de arquivos como `.env` para o agente.
+- [Instalação e atualizações](docs/instalacao.md): detalhes de Linux e Mac, e como a IDE se
+  atualiza.
+- [Desenvolvimento](docs/desenvolvimento.md): rodar, testar e adaptar a IDE para outras CLIs.
 
 ## Instalação
 
-Baixe o `Agent-IDE-Setup-<versão>.exe` na página de releases do GitHub e execute. Ele instala só para
-o seu usuário, sem pedir administrador. Como o instalador ainda não é assinado, o Windows pode mostrar
-"O Windows protegeu o computador": clique em **Mais informações** e em **Executar assim mesmo**.
+Baixe o instalador do seu sistema na [página de releases](https://github.com/Darci-Jr/agent-ide/releases/latest):
 
-Depois disso, a IDE se atualiza sozinha: baixa a versão nova em segundo plano e avisa na barra de
-cima quando ela está pronta. Ela nunca reinicia sem você pedir, e a versão nova também entra quando
-você fecha a IDE.
+| Sistema | Arquivo |
+| --- | --- |
+| Windows | `Agent-IDE-Setup-<versão>.exe` |
+| Ubuntu e Debian | `.deb` |
+| Outras distribuições Linux | `.AppImage` |
+| Mac (experimental) | `.dmg` de `arm64` (Apple Silicon) ou `x64` (Intel) |
 
-**Linux:** no Ubuntu e no Debian, prefira o `.deb` (`sudo apt install ./Agent-IDE-*.deb`); ele se
-atualiza baixando o novo. Nas outras distribuições, use o `.AppImage`, que se atualiza sozinho: dê
-permissão de execução (`chmod +x Agent-IDE-*.AppImage`) e abra. Ele precisa da `libfuse2`, que o
-Ubuntu 22.04 em diante não traz (`sudo apt install libfuse2t64`), e no Ubuntu 24 em diante só abre
-com `--no-sandbox`, porque o sistema bloqueia o sandbox do Electron em AppImages.
+Os instaladores ainda não são assinados. No Windows, se aparecer "O Windows protegeu o
+computador", clique em **Mais informações** e em **Executar assim mesmo**. Para Linux e Mac, veja
+[os detalhes de instalação](docs/instalacao.md).
 
-**Mac (experimental):** baixe o `.dmg` de `arm64` para Apple Silicon (M1 em diante) ou de `x64`
-para Intel. O app ainda não é assinado pela Apple: na primeira vez, clique nele com o botão direito
-e escolha **Abrir**. Ele avisa quando há versão nova, mas ainda não se atualiza sozinho.
-
-## O que faz
-
-- **Pasta de trabalho:** escolhida uma vez, no primeiro uso. Guarda só os dados da IDE:
-  `Ambientes`, `Templates`, a lista de projetos e os comandos. Prefira uma pasta fora de
-  repositórios Git; a IDE avisa se não for.
-- **Projetos:** crie um novo, escolhendo onde a pasta dele fica, ou adicione uma pasta existente.
-  Toda sessão parte de um projeto.
-- **Histórico:** as conversas do Claude Code de cada projeto, com a opção de restaurar a última.
-- **Sessão rápida:** só escolha o projeto. Ela abre um ambiente com o nome do projeto e a data,
-  que você renomeia com clique duplo na aba.
-- **Ambientes:** abas com layout e sessões próprios, com um ou vários projetos e quantas sessões
-  e terminais quiser em cada. Fechados continuam no histórico, com busca, e reabrem com as sessões.
-- **Templates:** moldes de ambiente, sem conversas. Exporte um template para um arquivo e
-  compartilhe com o time.
-- **Sessões em paralelo:** cada uma em um terminal real, com worktree Git opcional. Destaque
-  uma e volte para a grade sem reiniciar nada.
-- **Layout livre:** arraste, divida e agrupe painéis. O layout volta quando você reabre o app.
-- **Arquivos:** árvore do projeto, busca por nome e editor, incluindo arquivos que o Git
-  ignora, como `.env`.
-- **Markdown:** visualização que acompanha as mudanças do agente no arquivo.
-- **Temas:** claro e escuro.
-
-## Segredos
-
-Editar um `.env` aqui evita que o valor passe pela conversa com o agente, mas o agente ainda
-poderia abrir o arquivo no disco. Por isso o editor oferece **Bloquear**, que adiciona
-`Read(./caminho)` ao `deny` de `.claude/settings.local.json`. A regra vale para o Claude Code;
-outros agentes têm controles próprios. Ela não é uma barreira absoluta: um comando que leia o
-arquivo por outro caminho pode não ser reconhecido. Para garantia maior, mantenha o agente em
-modo que peça confirmação de comandos.
-
-O app não cria cópias, histórico nem telemetria do conteúdo dos arquivos. O arquivo de um
-ambiente exportado não leva segredos, conteúdo de arquivos, conversas nem caminhos da máquina.
-Ao importar, o arquivo é validado e nenhuma sessão começa sozinha.
-
-## Desenvolvimento
-
-Requer Node.js 24.
-
-```sh
-npm install
-npm run dev        # abre o app com recarga automática
-npm test           # testes de unidade
-npm run typecheck
-npm run e2e        # percorre o app real, sem consumir tokens
-node e2e/claude-real.mjs   # usa um Claude Code real e consome alguns tokens; faça o build antes
-```
-
-Para outra CLI ou um modelo local, implemente `AgentAdapter` (`src/main/adapters/types.ts`) e
-registre-o em `src/main/adapters/index.ts`.
+Você precisa do [Claude Code](https://code.claude.com/docs/pt/overview) instalado. Sem ele, a
+IDE funciona com terminais comuns e qualquer outra CLI.
 
 ## Licença
 
-MIT
+[MIT](LICENSE)
