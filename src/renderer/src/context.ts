@@ -33,6 +33,9 @@ export const INTERRUPTED_TIP = 'Estava trabalhando quando foi encerrada. A taref
 /** Quem executa os comandos de cada ambiente aberto. A aba do ambiente, no App, usa daqui. */
 export const commandRunners = new Map<string, (command: CustomCommand) => void>()
 
+/** Quem abre o menu de branches e worktrees de cada ambiente aberto, a partir do Git do rodapé. */
+export const footerGitMenus = new Map<string, (anchor: DOMRect) => void>()
+
 /** Editores com alterações não salvas, em todos os ambientes. */
 export const unsavedPanels = new Set<string>()
 

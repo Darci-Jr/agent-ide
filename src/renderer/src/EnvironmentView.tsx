@@ -6,11 +6,11 @@ import {
   type DockviewReadyEvent,
   type IDockviewPanel
 } from 'dockview-react'
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { PluginsPanel } from './panels/PluginsPanel'
 import { DiffPanel } from './panels/DiffPanel'
 import type { AdapterInfo, CreateSessionRequest, CustomCommand, DiffPanelParams, Environment, FilePanelParams, PluginsPanelParams, SessionSpec, SessionState, TerminalPanelParams } from '../../shared/types'
-import { commandRunners, EnvContext, INTERRUPTED_TIP, unsavedPanels, type EnvContextValue } from './context'
+import { commandRunners, footerGitMenus, EnvContext, INTERRUPTED_TIP, unsavedPanels, type EnvContextValue } from './context'
 import { FileDrawer } from './FileDrawer'
 import { IconButton } from './icons'
 import { errorMessage, ide } from './ide'
@@ -18,7 +18,7 @@ import { EditorPanel } from './panels/EditorPanel'
 import { MarkdownPanel } from './panels/MarkdownPanel'
 import { PanelTab } from './panels/PanelTab'
 import { TerminalPanel } from './panels/TerminalPanel'
-import { GitMenu } from './GitMenu'
+import { GIT_MENU_WIDTH, GitMenu } from './GitMenu'
 import { CommandsDialog } from './CommandsDialog'
 import { WorktreeDialog } from './WorktreeDialog'
 import { disposeTerminal, focusTerminal, resetTerminal, syncTerminalSize, type Theme } from './terminals'
@@ -66,8 +66,8 @@ export function EnvironmentView(props: {
   const [filesOpen, setFilesOpen] = useState(false)
   const [worktreeOpen, setWorktreeOpen] = useState(false)
   const [commandsOpen, setCommandsOpen] = useState(false)
-  // Altura do ícone Git quando o menu está aberto; nulo com ele fechado.
-  const [gitMenuAt, setGitMenuAt] = useState<{ top: number; left: number } | null>(null)
+  // Posição do menu Git aberto; nulo com ele fechado. Compacto quando aberto pelo rodapé.
+  const [gitMenuAt, setGitMenuAt] = useState<{ position: CSSProperties; compact: boolean } | null>(null)
   const gitButton = useRef<HTMLSpanElement>(null)
   // Sessão em uso: arquivos, comandos, plugins e sessões novas seguem o projeto dela.
   const [activeSessionId, setActiveSessionId] = useState('')
@@ -161,6 +161,26 @@ export function EnvironmentView(props: {
       commandRunners.delete(env.id)
     }
   }, [env.id, runCommand])
+
+  // O Git do rodapé abre o menu compacto logo acima dele; clicar de novo fecha.
+  useEffect(() => {
+    footerGitMenus.set(env.id, (anchor) =>
+      setGitMenuAt((open) =>
+        open?.compact
+          ? null
+          : {
+              compact: true,
+              position: {
+                bottom: window.innerHeight - anchor.top + 4,
+                left: Math.max(8, Math.min(anchor.left, window.innerWidth - GIT_MENU_WIDTH - 8))
+              }
+            }
+      )
+    )
+    return () => {
+      footerGitMenus.delete(env.id)
+    }
+  }, [env.id])
 
   const claudeAvailable = adapters.some((a) => a.id === 'claude' && a.available)
   const defaultAdapter = adapters.find((a) => a.available)?.id ?? 'shell'
@@ -364,10 +384,10 @@ export function EnvironmentView(props: {
           <IconButton withLabel={props.railExpanded}
             icon="git"
             label="Git"
-            className={gitMenuAt !== null ? 'on' : ''}
+            className={gitMenuAt !== null && !gitMenuAt.compact ? 'on' : ''}
             onClick={() => {
               const box = gitButton.current?.firstElementChild?.getBoundingClientRect()
-              setGitMenuAt(gitMenuAt === null ? { top: box?.top ?? 100, left: (box?.right ?? 44) + 6 } : null)
+              setGitMenuAt(gitMenuAt === null ? { compact: false, position: { top: box?.top ?? 100, left: (box?.right ?? 44) + 6 } } : null)
             }}
           />
         </span>
@@ -382,8 +402,9 @@ export function EnvironmentView(props: {
       {gitMenuAt !== null && (
         <GitMenu
           cwd={env.sessions.find((s) => s.id === lastSessionId.current)?.cwd ?? env.cwd}
-          top={gitMenuAt.top}
-          left={gitMenuAt.left}
+          key={gitMenuAt.compact ? 'rodape' : 'barra'}
+          position={gitMenuAt.position}
+          compact={gitMenuAt.compact}
           sessionsInFolder={(root) =>
             env.sessions
               .filter((s) => s.id !== lastSessionId.current && props.states.get(s.id)?.running && samePath(s.cwd, root))
@@ -393,6 +414,14 @@ export function EnvironmentView(props: {
             setGitMenuAt(null)
             placeNewSession({ adapterId: 'shell', terminalInWorktree: path }, true).catch((err) => toast(errorMessage(err)))
           }}
+          openSession={
+            claudeAvailable
+              ? (path) => {
+                  setGitMenuAt(null)
+                  placeNewSession({ adapterId: 'claude', terminalInWorktree: path }, true).catch((err) => toast(errorMessage(err)))
+                }
+              : undefined
+          }
           openDiff={(root) => {
             setGitMenuAt(null)
             openDiff(root)

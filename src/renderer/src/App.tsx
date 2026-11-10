@@ -5,7 +5,7 @@ import { SettingsDialog } from './SettingsDialog'
 import { Overlay } from './Overlay'
 import { UsageBar } from './UsageBar'
 import { CommandButtons } from './CommandButtons'
-import { commandRunners, INTERRUPTED_TIP, unsavedPanels } from './context'
+import { commandRunners, footerGitMenus, INTERRUPTED_TIP, unsavedPanels } from './context'
 import { EnvironmentView } from './EnvironmentView'
 import { Home } from './Home'
 import { IconButton } from './icons'
@@ -572,6 +572,7 @@ export function App(): ReactNode {
           cache={cacheSessionId ? { data: cache } : null}
           tokens={tokensSessionId ? { data: tokens } : null}
           git={prefs.showGit && activeId ? git : null}
+          openGitMenu={(anchor) => activeId && footerGitMenus.get(activeId)?.(anchor)}
         />
       )}
 

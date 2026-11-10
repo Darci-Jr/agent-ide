@@ -588,9 +588,31 @@ button:disabled {
   display: inline-flex;
   align-items: center;
   gap: 10px;
-  padding-left: 14px;
+  height: 100%;
+  margin: 0;
+  padding: 0 8px 0 14px;
+  background: transparent;
+  border: 0;
   border-left: 1px solid var(--line);
+  border-radius: 0;
+  color: inherit;
   font-family: 'Cascadia Mono', Consolas, 'SF Mono', Menlo, 'DejaVu Sans Mono', 'Ubuntu Mono', monospace;
+  font-size: inherit;
+  cursor: pointer;
+}
+
+.git-state:hover {
+  background: var(--hover);
+}
+
+.git-worktree-pick button {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.git-worktree-pick small {
+  color: var(--muted);
 }
 
 .git-branch {

@@ -17,6 +17,8 @@ nunca vai para dentro da pasta de trabalho.
 
 Cada aba de cima é um ambiente, com layout e sessões próprios.
 
+![Novo ambiente, com um template salvo no topo e a tabela de projetos](imagens/novo-ambiente.png)
+
 - **Novo ambiente:** pelo **+** logo após as abas. Escolha os projetos e quantas sessões do Claude e
   terminais cada um abre (até 8 de cada). Pastas novas, cada uma com nome e local próprios,
   viram projetos vazios. O ambiente já abre com as sessões iniciadas.

@@ -19,6 +19,8 @@ Abre o painel Alterações: o diff unificado da pasta contra o último commit, j
 stage, fora de stage e os arquivos novos. É só leitura. Cada painel guarda a pasta onde abriu, e há
 um por pasta.
 
+![Painel Alterações com o diff feito por uma sessão do Claude](imagens/alteracoes.png)
+
 ## Worktrees
 
 A ação **Sessão em worktree** da barra lateral cria uma worktree numa branch nova (`agent/<nome>`),
@@ -29,4 +31,12 @@ pede confirmação, recusa uma worktree em uso e mantém a branch.
 
 ## No rodapé
 
-À direita do rodapé ficam a branch e as alterações da sessão em uso. Veja [Rodapé](rodape.md).
+À direita do rodapé ficam a branch e as alterações da sessão em uso. Clicar nelas abre um menu
+curto, com as branches e as worktrees do repositório:
+
+- **Branch:** troca na hora, com as mesmas regras do menu Git. É recusada com alterações
+  versionadas e pede confirmação se outras sessões usam a mesma pasta.
+- **Worktree:** sempre abre uma sessão nova do Claude nela, inclusive na worktree em que você já está.
+
+Buscar, pull, push, criar branch e ver alterações ficam só no ícone Git da barra lateral. Veja também
+[Rodapé](rodape.md).
