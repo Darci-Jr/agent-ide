@@ -9,6 +9,8 @@ e tudo o que funciona no seu terminal funciona aqui.
 
 Windows, Linux e Mac (experimental). Open source, licença MIT.
 
+![Um ambiente com duas sessões do Claude Code, um terminal rodando os testes e o plano do projeto em Markdown](docs/imagens/ambiente.png)
+
 ## Principais funções
 
 ### Ambientes de trabalho
@@ -17,6 +19,8 @@ Cada aba é um ambiente com seus projetos, sessões e layout. Abra quantas sess�
 terminais quiser, arraste, divida e agrupe os painéis, e destaque uma sessão sem reiniciar nada.
 Um ambiente pode reunir vários projetos, e arquivos, Git e sessões novas seguem o projeto da
 sessão em uso. [Mais sobre ambientes →](docs/ambientes.md)
+
+![Tema escuro, com o painel Alterações mostrando o que o Claude mudou](docs/imagens/escuro.png)
 
 ### Templates
 
@@ -35,8 +39,8 @@ e o histórico de cada projeto lista todas elas. [Mais sobre sessões →](docs/
 ### O que importa, à vista
 
 O rodapé mostra o uso do Claude (5 horas e semana), o contexto, o tempo até o cache vencer e os
-tokens da sessão em uso, além da branch e das alterações do Git. Cada indicador pode ser
-desligado. [Mais sobre o rodapé →](docs/rodape.md)
+tokens da sessão em uso, além da branch e das alterações do Git. Um clique no Git troca de
+branch ou abre uma sessão numa worktree. Cada indicador pode ser desligado. [Mais sobre o rodapé →](docs/rodape.md)
 
 ## Outras funcionalidades
 

@@ -1,30 +1,35 @@
-import { useCallback, useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react'
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import type { GitAction, GitStatus, GitWorktree } from '../../shared/types'
 import { IconButton } from './icons'
 import { errorMessage, ide } from './ide'
 
+/** Largura do menu, para quem o posiciona não deixá-lo passar da janela. */
+export const GIT_MENU_WIDTH = 340
+
 /**
- * Ações de Git da sessão em uso, abertas pelo ícone da barra lateral. O rodapé só mostra o
- * estado; tudo que muda o repositório passa por aqui.
+ * Ações de Git da sessão em uso. Pelo ícone da barra lateral abre completo; pelo Git do rodapé,
+ * compacto, só com as branches para trocar e as worktrees para abrir uma sessão nova.
  */
 export function GitMenu(props: {
   cwd: string
-  /** Altura do ícone que abriu o menu, para o menu nascer ao lado dele. */
-  top: number
-  /** Logo à direita da barra lateral, que pode estar expandida. */
-  left: number
+  /** Posição na janela: ao lado do ícone da barra lateral ou acima do rodapé. */
+  position: CSSProperties
+  /** Aberto pelo rodapé: só trocar de branch e abrir sessão em worktree. */
+  compact?: boolean
   /** Outras sessões abertas na mesma pasta: trocar de branch também muda para elas. */
   sessionsInFolder(root: string): string[]
   openTerminal(worktreePath: string): void
+  /** Abre uma sessão nova do Claude na worktree. Sem ela (Claude ausente), o modo compacto só lista. */
+  openSession?(worktreePath: string): void
   /** Abre o painel de alterações da raiz do repositório. */
   openDiff(root: string): void
   onClose(): void
 }): ReactNode {
-  const { cwd } = props
+  const { cwd, compact = false } = props
   const [status, setStatus] = useState<GitStatus | null | undefined>(undefined)
   const [branches, setBranches] = useState<string[]>([])
   const [worktrees, setWorktrees] = useState<GitWorktree[]>([])
-  const [showBranches, setShowBranches] = useState(false)
+  const [showBranches, setShowBranches] = useState(compact)
   const [newBranch, setNewBranch] = useState<string | null>(null)
   const [message, setMessage] = useState<{ text: string; error: boolean } | null>(null)
   const [busy, setBusy] = useState(false)
@@ -45,7 +50,10 @@ export function GitMenu(props: {
 
   useEffect(() => {
     const close = (e: MouseEvent): void => {
-      if (!box.current?.contains(e.target as Node)) props.onClose()
+      const target = e.target as Element
+      // O clique no Git do rodapé alterna o menu por conta própria.
+      if (compact && target.closest?.('.git-state')) return
+      if (!box.current?.contains(target)) props.onClose()
     }
     window.addEventListener('mousedown', close, true)
     return () => window.removeEventListener('mousedown', close, true)
@@ -70,7 +78,7 @@ export function GitMenu(props: {
   const switchTo = (branch: string): void => {
     const others = status ? props.sessionsInFolder(status.root) : []
     if (others.length > 0 && !window.confirm(`Estas sessões usam a mesma pasta e também vão para ${branch}: ${others.join(', ')}. Trocar mesmo assim?`)) return
-    setShowBranches(false)
+    if (!compact) setShowBranches(false)
     void action({ kind: 'switch', branch })
   }
 
@@ -92,10 +100,10 @@ export function GitMenu(props: {
   return (
     <div
       ref={box}
-      className="git-menu"
+      className={`git-menu ${compact ? 'compact' : ''}`}
       role="dialog"
-      aria-label="Git"
-      style={{ top: props.top, left: props.left }}
+      aria-label={compact ? 'Branches e worktrees' : 'Git'}
+      style={{ ...props.position, width: GIT_MENU_WIDTH }}
       onKeyDown={(e) => {
         if (e.key === 'Escape') props.onClose()
       }}
@@ -107,17 +115,22 @@ export function GitMenu(props: {
           <h3>
             Git · <span className="mono">{status.branch}</span>
           </h3>
-          <button type="button" className="ghost git-diff" onClick={() => props.openDiff(status.root)}>
-            Ver alterações{status.changed > 0 ? ` (${status.changed})` : ''}
-          </button>
-          <div className="git-actions">
-            <button type="button" className="ghost" disabled={busy} aria-expanded={showBranches} onClick={() => setShowBranches(!showBranches)}>
-              Trocar branch
-            </button>
-            <button type="button" className="ghost" disabled={busy} onClick={() => setNewBranch(newBranch === null ? '' : null)}>
-              Nova branch
-            </button>
-          </div>
+          {!compact && (
+            <>
+              <button type="button" className="ghost git-diff" onClick={() => props.openDiff(status.root)}>
+                Ver alterações{status.changed > 0 ? ` (${status.changed})` : ''}
+              </button>
+              <div className="git-actions">
+                <button type="button" className="ghost" disabled={busy} aria-expanded={showBranches} onClick={() => setShowBranches(!showBranches)}>
+                  Trocar branch
+                </button>
+                <button type="button" className="ghost" disabled={busy} onClick={() => setNewBranch(newBranch === null ? '' : null)}>
+                  Nova branch
+                </button>
+              </div>
+            </>
+          )}
+          {compact && <h4>Branches</h4>}
           {showBranches && (
             <ul className="git-branches">
               {branches.map((b) => (
@@ -138,37 +151,60 @@ export function GitMenu(props: {
               </button>
             </form>
           )}
-          <div className="git-actions">
-            <button type="button" className="ghost" disabled={busy} onClick={() => void action({ kind: 'fetch' })}>
-              Buscar
-            </button>
-            <button type="button" className="ghost" disabled={busy} onClick={() => void action({ kind: 'pull' })}>
-              Puxar
-            </button>
-            <button type="button" className="ghost" disabled={busy} onClick={() => void action({ kind: 'push' })}>
-              Enviar
-            </button>
-          </div>
+          {!compact && (
+            <div className="git-actions">
+              <button type="button" className="ghost" disabled={busy} onClick={() => void action({ kind: 'fetch' })}>
+                Buscar
+              </button>
+              <button type="button" className="ghost" disabled={busy} onClick={() => void action({ kind: 'pull' })}>
+                Puxar
+              </button>
+              <button type="button" className="ghost" disabled={busy} onClick={() => void action({ kind: 'push' })}>
+                Enviar
+              </button>
+            </div>
+          )}
           {message && (
             <p className={message.error ? 'git-error' : 'git-ok'} role={message.error ? 'alert' : 'status'}>
               {message.text}
             </p>
           )}
           <h4>Worktrees</h4>
-          <ul className="git-worktrees">
-            {worktrees.map((w) => (
-              <li key={w.path} className={w.current ? 'on' : ''}>
-                <span className="git-worktree-name" data-tip={w.path}>
-                  {w.current ? '● ' : ''}
-                  {w.main ? `${w.name} (principal)` : w.name}
-                  <small>{w.branch ?? 'sem branch'}</small>
-                </span>
-                <IconButton icon="terminal" label={`Abrir terminal em ${w.name}`} onClick={() => props.openTerminal(w.path)} />
-                <IconButton icon="openFolder" label={`Abrir pasta de ${w.name}`} onClick={() => void ide.openWorktreeFolder(cwd, w.path)} />
-                {!w.main && <IconButton icon="trash" label={`Remover worktree ${w.name}`} disabled={busy} onClick={() => remove(w)} />}
-              </li>
-            ))}
-          </ul>
+          {compact ? (
+            <ul className="git-branches git-worktree-pick">
+              {worktrees.map((w) => (
+                <li key={w.path}>
+                  <button
+                    type="button"
+                    disabled={!props.openSession}
+                    data-tip={props.openSession ? `Nova sessão do Claude Code em ${w.path}` : 'Claude Code não encontrado no PATH'}
+                    onClick={() => props.openSession?.(w.path)}
+                  >
+                    <span>
+                      {w.current ? '● ' : ''}
+                      {w.main ? `${w.name} (principal)` : w.name}
+                    </span>
+                    <small>{w.branch ?? 'sem branch'}</small>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <ul className="git-worktrees">
+              {worktrees.map((w) => (
+                <li key={w.path} className={w.current ? 'on' : ''}>
+                  <span className="git-worktree-name" data-tip={w.path}>
+                    {w.current ? '● ' : ''}
+                    {w.main ? `${w.name} (principal)` : w.name}
+                    <small>{w.branch ?? 'sem branch'}</small>
+                  </span>
+                  <IconButton icon="terminal" label={`Abrir terminal em ${w.name}`} onClick={() => props.openTerminal(w.path)} />
+                  <IconButton icon="openFolder" label={`Abrir pasta de ${w.name}`} onClick={() => void ide.openWorktreeFolder(cwd, w.path)} />
+                  {!w.main && <IconButton icon="trash" label={`Remover worktree ${w.name}`} disabled={busy} onClick={() => remove(w)} />}
+                </li>
+              ))}
+            </ul>
+          )}
         </>
       )}
     </div>

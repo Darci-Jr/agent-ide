@@ -376,7 +376,7 @@ export interface CreateSessionRequest {
   worktree?: { name: string | null }
   /** Abre um terminal avulso na pasta desta sessão; sem ela, na pasta do ambiente. */
   terminalOfSessionId?: string
-  /** Abre o terminal nesta worktree do repositório do ambiente. */
+  /** Abre a sessão (terminal ou Claude) nesta worktree do repositório do projeto. */
   terminalInWorktree?: string
   /** Id de um comando salvo do projeto: o terminal novo o executa assim que o prompt aparece. */
   runCommandId?: string

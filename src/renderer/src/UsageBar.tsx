@@ -78,11 +78,19 @@ function TokensState({ data }: { data: TokenTotals | null }): ReactNode {
   )
 }
 
-/** Só o estado: as ações de Git ficam no ícone da barra lateral. */
-function GitState({ git }: { git: GitStatus }): ReactNode {
+/**
+ * Estado do Git. Única exceção à regra de o rodapé não ter ações: o clique abre a troca de
+ * branch e de worktree. As demais ações de Git ficam no ícone da barra lateral.
+ */
+function GitState({ git, onOpen }: { git: GitStatus; onOpen(anchor: DOMRect): void }): ReactNode {
   return (
-    <span className="git-state">
-      <span className="git-branch" data-tip={git.detached ? 'Sem branch: commit avulso' : git.root}>
+    <button
+      type="button"
+      className="git-state"
+      aria-label="Trocar branch ou worktree"
+      onClick={(e) => onOpen(e.currentTarget.getBoundingClientRect())}
+    >
+      <span className="git-branch" data-tip={`${git.detached ? 'Sem branch: commit avulso' : git.root}\nClique para trocar de branch ou worktree`}>
         ⑂ {git.branch}
       </span>
       {git.upstream && (
@@ -96,7 +104,7 @@ function GitState({ git }: { git: GitStatus }): ReactNode {
         </span>
       )}
       {git.worktree && <span data-tip={git.root}>worktree: {git.worktree}</span>}
-    </span>
+    </button>
   )
 }
 
@@ -113,6 +121,8 @@ export function UsageBar(props: {
   tokens: { data: TokenTotals | null } | null
   /** Nulo quando o Git está desligado ou a pasta não é um repositório. */
   git: GitStatus | null
+  /** Abre a troca de branch e de worktree acima do Git do rodapé. */
+  openGitMenu(anchor: DOMRect): void
 }): ReactNode {
   // Redesenha a cada minuto para "renovado" não ficar parado.
   const [, setTick] = useState(0)
@@ -133,7 +143,7 @@ export function UsageBar(props: {
       {props.showContext && context && <Meter label="Contexto" percent={context.data?.usedPercentage ?? null} tip={contextTip} />}
       {props.cache && <CacheState data={props.cache.data} />}
       {props.tokens && <TokensState data={props.tokens.data} />}
-      {props.git && <GitState git={props.git} />}
+      {props.git && <GitState git={props.git} onOpen={props.openGitMenu} />}
     </footer>
   )
 }
