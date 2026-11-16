@@ -51,6 +51,10 @@ export function SettingsDialog(props: {
             Mostrar uso do Claude no rodapé
           </label>
           <label className="setting">
+            <input type="checkbox" checked={prefs.showModel} onChange={(e) => changePrefs({ ...prefs, showModel: e.target.checked })} />
+            Mostrar modelo no rodapé
+          </label>
+          <label className="setting">
             <input type="checkbox" checked={prefs.showContext} onChange={(e) => changePrefs({ ...prefs, showContext: e.target.checked })} />
             Mostrar janela de contexto no rodapé
           </label>

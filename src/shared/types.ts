@@ -191,9 +191,12 @@ export interface PluginsPanelParams {
 
 /** Janela de contexto de uma sessão do Claude, como a linha de status informa. */
 export interface SessionContext {
-  usedPercentage: number
+  /** Nulo antes da primeira resposta. */
+  usedPercentage: number | null
   /** Tamanho da janela em tokens, quando informado. */
   size: number | null
+  /** Modelo da conversa, como a linha de status informa; muda com /model. */
+  model?: { id: string; name: string } | null
   updatedAt: number
 }
 
@@ -235,6 +238,7 @@ export interface Preferences {
   showContext: boolean
   showCache: boolean
   showTokens: boolean
+  showModel: boolean
   showGit: boolean
 }
 
