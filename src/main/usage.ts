@@ -36,9 +36,17 @@ process.stdin.on('end', () => {
       try { saved = fs.readFileSync(file, 'utf8') } catch {}
       if (saved !== text) save(file, JSON.parse(text))
     }
-    if (known && typeof context.used_percentage === 'number') {
-      const size = typeof context.context_window_size === 'number' ? context.context_window_size : null
-      save(path.join(contextDir, sessionId + '.json'), { usedPercentage: context.used_percentage, size, updatedAt: Date.now() })
+    // O modelo vem desde o início e muda com /model; o contexto, só depois da primeira resposta.
+    const m = data.model || {}
+    const model = typeof m.id === 'string' && m.id ? { id: m.id, name: typeof m.display_name === 'string' && m.display_name ? m.display_name : m.id } : null
+    const hasContext = typeof context.used_percentage === 'number'
+    if (known && (hasContext || model)) {
+      const file = path.join(contextDir, sessionId + '.json')
+      let prev = {}
+      try { prev = JSON.parse(fs.readFileSync(file, 'utf8')) || {} } catch {}
+      const usedPercentage = hasContext ? context.used_percentage : typeof prev.usedPercentage === 'number' ? prev.usedPercentage : null
+      const size = hasContext ? (typeof context.context_window_size === 'number' ? context.context_window_size : null) : typeof prev.size === 'number' ? prev.size : null
+      save(file, { usedPercentage, size, model: model || prev.model || null, updatedAt: Date.now() })
     }
   } catch {}
   if (!original) return
@@ -55,7 +63,7 @@ export interface Conversation {
   transcriptPath: string
 }
 
-const DEFAULT_PREFERENCES: Preferences = { showUsage: true, showContext: true, showCache: true, showTokens: true, showGit: true }
+const DEFAULT_PREFERENCES: Preferences = { showUsage: true, showContext: true, showCache: true, showTokens: true, showModel: true, showGit: true }
 const PREFERENCE_KEYS = Object.keys(DEFAULT_PREFERENCES) as Array<keyof Preferences>
 
 /** Cuida dos arquivos da linha de status e das preferências, todos no perfil do app. */

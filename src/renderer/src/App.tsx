@@ -60,7 +60,7 @@ export function App(): ReactNode {
   }, [])
   const [usage, setUsage] = useState<ClaudeUsage | null>(null)
   const [update, setUpdate] = useState<UpdateState | null>(null)
-  const [prefs, setPrefs] = useState<Preferences>({ showUsage: true, showContext: true, showCache: true, showTokens: true, showGit: true })
+  const [prefs, setPrefs] = useState<Preferences>({ showUsage: true, showContext: true, showCache: true, showTokens: true, showModel: true, showGit: true })
   // Sessão em uso em cada ambiente, e o contexto já lido de cada sessão.
   const [activeSessions, setActiveSessions] = useState<Record<string, string>>({})
   const [contexts, setContexts] = useState<Record<string, SessionContext | null>>({})
@@ -563,12 +563,13 @@ export function App(): ReactNode {
         ))}
       </main>
 
-      {(prefs.showUsage || prefs.showContext || prefs.showCache || prefs.showTokens || prefs.showGit) && (
+      {(prefs.showUsage || prefs.showContext || prefs.showCache || prefs.showTokens || prefs.showModel || prefs.showGit) && (
         <UsageBar
           usage={usage}
           context={activeClaude ? { title: activeClaude.title, data: contexts[activeClaude.id] ?? null } : null}
           showUsage={prefs.showUsage}
           showContext={prefs.showContext}
+          showModel={prefs.showModel}
           cache={cacheSessionId ? { data: cache } : null}
           tokens={tokensSessionId ? { data: tokens } : null}
           git={prefs.showGit && activeId ? git : null}

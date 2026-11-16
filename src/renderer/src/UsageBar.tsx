@@ -61,6 +61,16 @@ function CacheState({ data }: { data: CacheInfo | null }): ReactNode {
   )
 }
 
+/** Modelo da sessão em uso; a dica traz o id completo. */
+function ModelState({ model }: { model: { id: string; name: string } | null }): ReactNode {
+  if (!model) return <span className="usage-meter" data-tip="Aparece quando a linha de status do Claude Code atualizar">Modelo —</span>
+  return (
+    <span className="usage-meter usage-model" data-tip={model.id}>
+      {model.name}
+    </span>
+  )
+}
+
 const compact = new Intl.NumberFormat('pt-BR', { notation: 'compact', maximumFractionDigits: 1 })
 
 /** Tokens da conversa inteira; a dica separa o que é entrada, cache e saída. */
@@ -108,13 +118,14 @@ function GitState({ git, onOpen }: { git: GitStatus; onOpen(anchor: DOMRect): vo
   )
 }
 
-/** Rodapé da IDE: limites da conta, o contexto e o Git da sessão em uso. */
+/** Rodapé da IDE: limites da conta, o modelo, o contexto e o Git da sessão em uso. */
 export function UsageBar(props: {
   usage: ClaudeUsage | null
   /** Nulo quando não há sessão do Claude à vista. */
   context: { title: string; data: SessionContext | null } | null
   showUsage: boolean
   showContext: boolean
+  showModel: boolean
   /** Nulo quando o cache está desligado ou não há sessão do Claude em uso. */
   cache: { data: CacheInfo | null } | null
   /** Nulo quando desligado ou sem sessão do Claude em uso. */
@@ -140,6 +151,7 @@ export function UsageBar(props: {
           <LimitMeter label="Semana" window={usage?.sevenDay ?? null} />
         </>
       )}
+      {props.showModel && context && <ModelState model={context.data?.model ?? null} />}
       {props.showContext && context && <Meter label="Contexto" percent={context.data?.usedPercentage ?? null} tip={contextTip} />}
       {props.cache && <CacheState data={props.cache.data} />}
       {props.tokens && <TokensState data={props.tokens.data} />}

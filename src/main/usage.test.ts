@@ -37,6 +37,14 @@ describe('linha de status', () => {
     expect(readJson('contexto', 'sessao-1.json')).toMatchObject({ usedPercentage: 34, size: 200000 })
   })
 
+  it('guarda o modelo da sessão, que muda com /model, sem perder o contexto', () => {
+    runScript({ model: { id: 'claude-opus-5-5', display_name: 'Opus 5.5' } })
+    expect(readJson('contexto', 'sessao-1.json')).toMatchObject({ usedPercentage: null, model: { id: 'claude-opus-5-5', name: 'Opus 5.5' } })
+    runScript({ model: { id: 'claude-opus-5-5', display_name: 'Opus 5.5' }, context_window: { used_percentage: 12, context_window_size: 200000 } })
+    runScript({ model: { id: 'claude-sonnet-5-5' }, context_window: { used_percentage: null } })
+    expect(readJson('contexto', 'sessao-1.json')).toMatchObject({ usedPercentage: 12, size: 200000, model: { id: 'claude-sonnet-5-5', name: 'claude-sonnet-5-5' } })
+  })
+
   it('não apaga o último valor quando a sessão ainda não tem dados', () => {
     runScript({ rate_limits: { five_hour: { used_percentage: 10, resets_at: 1 } }, context_window: { used_percentage: 5 } })
     runScript({ model: { id: 'x' }, context_window: { used_percentage: null } })
@@ -79,7 +87,7 @@ describe('UsageTracker', () => {
   it('lembra cada opção do rodapé e esquece a sessão removida', () => {
     const t = tracker()
     try {
-      const all = { showUsage: true, showContext: true, showCache: true, showTokens: true, showGit: true }
+      const all = { showUsage: true, showContext: true, showCache: true, showTokens: true, showModel: true, showGit: true }
       expect(t.preferences()).toEqual(all)
       t.savePreferences({ ...all, showContext: false, showTokens: false })
       expect(t.preferences()).toEqual({ ...all, showContext: false, showTokens: false })
